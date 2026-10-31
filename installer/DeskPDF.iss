@@ -30,6 +30,10 @@ Source: "..\dist\DeskPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 Source: "..\LICENSE"; DestDir: "{app}"
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"
 
+[InstallDelete]
+; Remove obsolete bundled libraries when upgrading an existing installation.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Icons]
 Name: "{group}\DeskPDF"; Filename: "{app}\DeskPDF.exe"
 Name: "{autodesktop}\DeskPDF"; Filename: "{app}\DeskPDF.exe"; Tasks: desktopicon
