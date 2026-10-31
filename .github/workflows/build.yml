@@ -1,0 +1,23 @@
+name: Windows build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: python -m venv .venv
+      - run: .venv/Scripts/python -m pip install -e ".[dev]"
+      - run: ./scripts/build.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeskPDF-Windows-x64
+          path: releases/*.exe

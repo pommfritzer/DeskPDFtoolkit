@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deskpdf-toolkit"
+version = "0.1.0"
+description = "A quiet, local-first PDF workbench for Windows"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+dependencies = ["PySide6-Essentials>=6.8,<7", "PyMuPDF>=1.26.7,<2", "Pillow>=11,<14", "python-docx>=1.2,<2", "openpyxl>=3.1,<4", "python-pptx>=1.0,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pyinstaller>=6.16,<7"]
+
+[project.urls]
+Repository = "https://github.com/pommfritzer/DeskPDFtoolkit"
+Issues = "https://github.com/pommfritzer/DeskPDFtoolkit/issues"
+
+[project.gui-scripts]
+deskpdf = "deskpdf.app:main"
+
+[tool.setuptools.package-data]
+deskpdf = ["assets/*"]
+
+[tool.setuptools.packages.find]
+include = ["deskpdf*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
