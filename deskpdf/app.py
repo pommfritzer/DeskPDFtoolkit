@@ -255,28 +255,14 @@ class Window(QMainWindow):
         self.password.editingFinished.connect(self.refresh_preview)
         left.addWidget(self.password)
         left.addSpacing(18)
-        left.addWidget(label("2   MAKE IT YOURS", "eyebrow"))
+        self.settings_title = label("2   MAKE IT YOURS", "eyebrow")
+        left.addWidget(self.settings_title)
         self.form_widget = QWidget()
         self.form = QFormLayout(self.form_widget)
         self.form.setContentsMargins(0, 10, 0, 0)
         self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         left.addWidget(self.form_widget)
-        self.merge_pages_widget = QWidget()
-        merge_settings = QVBoxLayout(self.merge_pages_widget)
-        merge_settings.setContentsMargins(0, 10, 0, 0)
-        merge_settings.addWidget(label("Pages from selected PDF", "section"))
-        self.merge_source = label("Select a PDF above.", "muted")
-        self.merge_source.setTextFormat(Qt.TextFormat.PlainText)
-        merge_settings.addWidget(self.merge_source)
-        self.merge_pages = QLineEdit("all")
-        self.merge_pages.setAccessibleName("Pages to merge from selected PDF")
-        self.merge_pages.textChanged.connect(self.update_merge_pages)
-        merge_settings.addWidget(self.merge_pages)
-        merge_settings.addWidget(label("Use all, or enter pages such as 1, 3-5.\nSelect another file above to choose its pages.", "muted"))
-        merge_settings.addWidget(button("Use only the page in preview", self.merge_current_page))
-        left.addWidget(self.merge_pages_widget)
         self.visual_merge = MergeView()
-        left.addWidget(self.visual_merge)
         self.no_options = label("Ready when you are. This tool needs no extra settings.", "muted")
         left.addWidget(self.no_options)
         left.addStretch()
@@ -302,7 +288,9 @@ class Window(QMainWindow):
         right.addLayout(paging)
         self.preview_hint = label("Preview shows your original. Open the saved file to review changes.", "muted")
         right.addWidget(self.preview_hint)
+        self.preview_frame = preview_frame
         columns.addWidget(preview_frame, 6)
+        columns.addWidget(self.visual_merge, 9)
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.hide()
@@ -353,9 +341,10 @@ class Window(QMainWindow):
                 self.form.addRow(title, row)
             else:
                 self.form.addRow(title, widget)
-        self.merge_pages_widget.hide()
         self.visual_merge.setVisible(tool.id == "merge")
-        self.load_merge_pages()
+        self.settings_title.setVisible(tool.id != "merge")
+        self.order_hint.setText("Arrange pages directly in the thumbnail grid." if tool.id == "merge" else "Drag files to change their order.")
+        self.preview_frame.setVisible(tool.id != "merge")
         self.no_options.setVisible(not tool.fields and tool.id != "merge")
         self.order_hint.setVisible(tool.multiple)
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove if tool.multiple else QListWidget.DragDropMode.NoDragDrop)
@@ -408,32 +397,7 @@ class Window(QMainWindow):
 
     def file_selected(self, row):
         self.page_index = 0
-        self.load_merge_pages()
         self.refresh_preview()
-
-    def load_merge_pages(self):
-        if self.current_tool and self.current_tool.id == "merge":
-            for index in range(self.file_list.count()):
-                source = self.file_list.item(index)
-                name = Path(source.data(Qt.ItemDataRole.UserRole)).name
-                source.setText(name)
-        item = self.file_list.currentItem()
-        self.merge_pages.blockSignals(True)
-        self.merge_pages.setText((item.data(MERGE_PAGES_ROLE) or "all") if item else "all")
-        self.merge_pages.blockSignals(False)
-        self.merge_pages_widget.setEnabled(item is not None)
-        self.merge_source.setText(Path(item.data(Qt.ItemDataRole.UserRole)).name if item else "Select a PDF above.")
-
-    def update_merge_pages(self, expression):
-        item = self.file_list.currentItem()
-        if item:
-            item.setData(MERGE_PAGES_ROLE, expression)
-            name = Path(item.data(Qt.ItemDataRole.UserRole)).name
-            item.setText(f"{name}\nPages: {expression.strip() or 'all'}")
-
-    def merge_current_page(self):
-        if self.preview.page_size:
-            self.merge_pages.setText(str(self.page_index + 1))
 
     def selected_path(self):
         item = self.file_list.currentItem()
@@ -446,7 +410,7 @@ class Window(QMainWindow):
     def refresh_preview(self):
         if self.current_tool and self.current_tool.id == "merge":
             try:
-                self.visual_merge.refresh(self.selected_path(), self.paths, self.password.text())
+                self.visual_merge.refresh(self.paths, self.password.text())
             except Exception as error:
                 self.status.setText(str(error))
         self.preview.clear()
@@ -498,9 +462,10 @@ class Window(QMainWindow):
         output, _ = QFileDialog.getSaveFileName(self, "Save a new file", str(default), f"{extension.upper()} file (*.{extension})")
         if not output:
             return
+        if Path(output).resolve() in [path.resolve() for path in self.paths]:
+            self.status.setText("Save to a new file to keep every original safe.")
+            return
         options = {"password": self.password.text()}
-        if self.current_tool.id == "merge":
-            options["merge_pages"] = [self.file_list.item(index).data(MERGE_PAGES_ROLE) or "all" for index in range(self.file_list.count())]
         for name, widget in self.fields.items():
             options[name] = widget.toPlainText() if isinstance(widget, QPlainTextEdit) else widget.currentText() if isinstance(widget, QComboBox) else widget.text()
         job_paths = list(self.paths)
@@ -541,7 +506,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.1.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.1.2\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

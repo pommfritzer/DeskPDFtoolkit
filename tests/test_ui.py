@@ -24,54 +24,41 @@ def test_all_tool_forms_and_search():
     app.processEvents()
 
 
-def test_merge_page_choices_follow_files(tmp_path):
+def test_combined_merge_grid(tmp_path):
     import pymupdf as pdf
-    from PySide6.QtWidgets import QFileDialog
     from unittest.mock import patch
-    from deskpdf.app import MERGE_PAGES_ROLE
+    from PySide6.QtWidgets import QFileDialog
     from deskpdf.catalog import TOOL_BY_ID
-
     app = QApplication.instance() or QApplication([])
     paths = [tmp_path / "first.pdf", tmp_path / "second.pdf"]
     for path in paths:
         with pdf.open() as document:
-            for index in range(3):
-                document.new_page()
+            for number in range(3):
+                document.new_page().insert_text((40, 60), f"{path.stem} {number + 1}")
             document.save(path)
     window = Window()
     window.select_tool(TOOL_BY_ID["merge"])
     window.add_paths(paths)
-    window.merge_pages.setText("3,1")
+    grid = window.visual_merge.pages
+    assert grid.count() == 6
+    for index in (0, 2, 4):
+        window.visual_merge.toggle(grid.item(index))
+    grid.move_page(4, 0)
     window.file_list.setCurrentRow(1)
-    assert window.merge_pages.text() == "all"
-    window.change_page(1)
-    window.merge_current_page()
-    assert window.merge_pages.text() == "2"
-    window.file_list.setCurrentRow(0)
-    assert window.merge_pages.text() == "3,1"
-    window.select_tool(TOOL_BY_ID["extract"])
-    window.select_tool(TOOL_BY_ID["merge"])
-    assert window.merge_pages.text() == "3,1"
-    item = window.file_list.takeItem(1)
-    window.file_list.insertItem(0, item)
-    window.sync_paths()
-    assert window.file_list.item(0).data(MERGE_PAGES_ROLE) == "2"
-    assert window.paths == paths[::-1]
-    window.file_list.setCurrentRow(0)
-    window.visual_merge.toggle(window.visual_merge.pages.item(1))
-    window.file_list.setCurrentRow(1)
-    window.visual_merge.toggle(window.visual_merge.pages.item(2))
-    window.visual_merge.toggle(window.visual_merge.pages.item(0))
+    assert grid.count() == 6
+    assert window.visual_merge.selection() == [(str(paths[1]), 1), (str(paths[0]), 0), (str(paths[0]), 2)]
     output = tmp_path / "merged.pdf"
     with patch.object(QFileDialog, "getSaveFileName", return_value=(str(output), "")):
         window.start_job()
-    assert window.worker.arguments[3]["merge_pages"] == ["2", "3", "1"]
     assert window.worker.wait(10000)
     app.processEvents()
     with pdf.open(output) as document:
-        assert len(document) == 3
+        assert [page.get_text().strip() for page in document] == ["second 2", "first 1", "first 3"]
     window.file_list.setCurrentRow(0)
     window.remove_file()
-    assert window.paths == [paths[0]]
-    assert window.merge_pages.text() == "3,1"
+    assert grid.count() == 3
+    window.visual_merge.select_all(True)
+    assert len(window.visual_merge.selection()) == 3
+    window.visual_merge.select_all(False)
+    assert not window.visual_merge.selection()
     window.close()

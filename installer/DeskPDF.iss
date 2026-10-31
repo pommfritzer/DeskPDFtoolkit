@@ -1,4 +1,4 @@
-#define AppVersion "0.1.1"
+#define AppVersion "0.1.2"
 [Setup]
 AppId={{E67CB156-753F-48F5-943A-71157495281C}
 AppName=DeskPDF
@@ -6,6 +6,9 @@ AppVersion={#AppVersion}
 AppPublisher=DeskPDF contributors
 DefaultDirName={localappdata}\Programs\DeskPDF
 DefaultGroupName=DeskPDF
+UsePreviousAppDir=no
+DisableDirPage=yes
+RestartApplications=no
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -33,12 +36,16 @@ Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"
 [InstallDelete]
 ; Remove obsolete bundled libraries when upgrading an existing installation.
 Type: filesandordirs; Name: "{app}\_internal"
+Type: files; Name: "{autodesktop}\DeskPDF.lnk"; Tasks: not desktopicon
 
 [Icons]
 Name: "{group}\DeskPDF"; Filename: "{app}\DeskPDF.exe"
 Name: "{autodesktop}\DeskPDF"; Filename: "{app}\DeskPDF.exe"; Tasks: desktopicon
 
 [Registry]
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\DeskPDF.Open"; Flags: deletekey; Tasks: not explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\DeskPDF.Compress"; Flags: deletekey; Tasks: not explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\DeskPDF.Extract"; Flags: deletekey; Tasks: not explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\DeskPDF.Open"; ValueType: string; ValueName: ""; ValueData: "Open in DeskPDF"; Flags: uninsdeletekey; Tasks: explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\DeskPDF.Open"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\DeskPDF.exe,0"; Tasks: explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\DeskPDF.Open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\DeskPDF.exe"" ""%1"""; Tasks: explorer

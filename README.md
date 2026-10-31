@@ -8,7 +8,7 @@ DeskPDF brings common PDF jobs into one native desktop app: choose a tool, add a
 
 ## Install
 
-Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `DeskPDF-0.1.1-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
+Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `DeskPDF-0.1.2-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
 
 The optional Explorer integration adds **Open in DeskPDF**, **Compress with DeskPDF**, and **Extract pages with DeskPDF** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
 
@@ -26,7 +26,7 @@ Target: Windows 10/11, x64. The initial build is unsigned; Windows may show an u
 
 Page selections accept `all`, `1,3-5`, descending ranges such as `5-1`, and duplicates for extraction/reordering. Drag input files to set merge order. Click a document preview to position text or a signature. Coordinates and dimensions use PDF points (72 points per inch).
 
-For merging, select a PDF in the file list and click its page thumbnails to include or remove pages. Selected pages appear in the output list. Drag those pages into any order, including interleaving pages from different PDFs. No page-number entry is needed.
+For merging, all pages from every added PDF appear together in one thumbnail grid. Click thumbnails to include or exclude pages; drag the thumbnails directly into output order. Select all and Clear selection apply across the whole grid. Each thumbnail identifies its source PDF and page number.
 
 ![DeskPDF workbench](docs/screenshots/workbench.png)
 
@@ -70,7 +70,9 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then:
 .\scripts\build.ps1
 ```
 
-The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/DeskPDF-0.1.1-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/DeskPDF`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.1.1` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
+To upgrade the local installation and open Merge PDF, run `./scripts/install.ps1` from the project folder. It uses the project version's installer, retains installer task preferences, closes the previous app through the installer, and launches once afterward. Installation stays in `%LOCALAPPDATA%\Programs\DeskPDF`; reinstalling updates the same Windows uninstall entry. Disabling Explorer integration or the desktop shortcut during setup removes those entries.
+
+The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/DeskPDF-0.1.2-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/DeskPDF`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.1.2` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
 
 ## Architecture
 

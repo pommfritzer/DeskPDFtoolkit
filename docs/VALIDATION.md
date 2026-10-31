@@ -17,3 +17,9 @@ These checks are not a substitute for testing on clean Windows 10 and Windows 11
 All 34 tests pass. New checks verify different selections for each source, page order and duplicates, file-specific invalid-range errors, destination preservation on failure, and selection persistence through file changes, reordering, tool switching and removal. The UI test also saves an actual merged PDF through the workbench and verifies the submitted per-file choices.
 
 The merge view was rendered and inspected. The Windows bundle passed its startup checks, the 0.1.1 installer upgraded the installed application successfully, and the updated app reopened on Merge PDF.
+
+## 0.1.2: combined thumbnail workspace and installation cleanup
+
+All 34 tests pass. The merge UI test loads both PDFs together, clicks pages from both sources, uses the same move operation as thumbnail dropping, switches source selection without resetting the grid, exports the actual PDF, and checks its text order. Removing an input prunes its thumbnails; select-all and clear apply across remaining pages.
+
+The combined view was rendered and inspected. The installer upgrades one fixed per-user installation, cleans obsolete runtime files, disables automatic duplicate relaunches, and removes deselected integration entries. Reinstall checks verified Explorer integration both disabled and enabled, and one Windows uninstall entry for DeskPDF 0.1.2.
