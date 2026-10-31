@@ -1,5 +1,9 @@
 # Initial release validation
 
+## 0.2.0 interface overhaul
+
+All 35 tests pass, including preservation of selected page order across thumbnail enlargement, sharper re-rendered icons, top navigation height, and background animation control. The gallery and workbenches were rendered and inspected at normal and minimum window sizes. The build checks the packaged application's imports and workbench startup before compiling the installer.
+
 Validated on Windows 11 x64, 31 October 2026, with Python 3.14.6, Qt/PySide6 6.12.0, MuPDF/PyMuPDF 1.26.7, PyInstaller 6.22.3 and Inno Setup 6.7.4.
 
 - 31 automated tests pass, including all tool forms and search, exact page sequencing, duplicate pages, merge, delete, rotation, crop, irreversible text redaction, annotations, text overlays, watermarking, numbering, lossless save, metadata removal, password protection/preservation/unlocking, image input, signature placement, ZIP output, text/Word/PowerPoint export, Excel tables and formula-safe string cells, form filling and flattening, validation failures, and preservation of existing destinations after failure.

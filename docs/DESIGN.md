@@ -1,5 +1,15 @@
 # Design decisions
 
+## 0.2 visual direction
+
+The current interface uses one top navigation band occupying one sixth of the window height. Branding, tool categories, search, the active tool name and Settings live together there. The main gallery uses large vector tool icons with short labels. The old sidebar and large promotional headline have been removed.
+
+The background is a locally drawn dark green gradient with slowly moving translucent ribbons and a fixed grey dot grid. It uses Qt painting and a bounded timer, without video assets or network resources. Painting pauses while minimized; Settings can pause animation entirely. Dark translucent surfaces and light text preserve contrast over the moving background.
+
+The combined merge grid starts with 260-pixel page previews. A slider adjusts them from 140 to 650 pixels, with debounced rendering at the chosen resolution. Resizing updates icons in place so selection, source identity and output order survive. The source list stays compact while the page workspace occupies the larger column.
+
+The sections below record the original interaction and technology decisions; the visual direction above supersedes the original paper palette and sidebar.
+
 ## Product
 
 Make frequent PDF operations short and predictable. The tool library is the entry point; each tool has one workbench with the same file → settings → save sequence. No account, subscription, marketing banner, upload step, or dashboard statistics.

@@ -47,6 +47,12 @@ def test_combined_merge_grid(tmp_path):
     window.file_list.setCurrentRow(1)
     assert grid.count() == 6
     assert window.visual_merge.selection() == [(str(paths[1]), 1), (str(paths[0]), 0), (str(paths[0]), 2)]
+    before_zoom = window.visual_merge.selection()
+    window.visual_merge.zoom.setValue(500)
+    window.visual_merge.render_thumbnails()
+    assert grid.iconSize().width() == 500
+    assert grid.item(0).icon().availableSizes()[0].width() > 300
+    assert window.visual_merge.selection() == before_zoom
     output = tmp_path / "merged.pdf"
     with patch.object(QFileDialog, "getSaveFileName", return_value=(str(output), "")):
         window.start_job()
@@ -61,4 +67,19 @@ def test_combined_merge_grid(tmp_path):
     assert len(window.visual_merge.selection()) == 3
     window.visual_merge.select_all(False)
     assert not window.visual_merge.selection()
+    window.close()
+
+
+def test_top_navigation_and_motion_control():
+    app = QApplication.instance() or QApplication([])
+    window = Window()
+    window.show()
+    app.processEvents()
+    assert abs(window.topbar.height() - window.height() / 6) < 2
+    background = window.centralWidget()
+    phase = background.phase
+    background.advance()
+    assert background.phase > phase
+    background.timer.stop()
+    assert not background.timer.isActive()
     window.close()

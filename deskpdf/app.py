@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pymupdf as pdf
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSize
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QApplication, QComboBox, QMenu, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea,
     QStackedWidget, QVBoxLayout, QWidget,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from deskpdf.catalog import TOOLS, TOOL_BY_ID
 from deskpdf.engine import open_document, run_tool
 from deskpdf.theme import STYLE
+from deskpdf.design import AmbientBackground, tool_icon
 from deskpdf.merge_view import MergeView
 
 ASSETS = Path(__file__).parent / "assets"
@@ -121,33 +122,38 @@ class Window(QMainWindow):
         self.worker = None
         self.last_output = None
         self.setAcceptDrops(True)
-        root = QWidget(objectName="root")
+        root = AmbientBackground()
         self.setCentralWidget(root)
-        shell = QHBoxLayout(root)
-        shell.setContentsMargins(0, 0, 0, 0)
-        shell.setSpacing(0)
-        sidebar = QFrame(objectName="sidebar")
-        sidebar.setFixedWidth(200)
-        navigation = QVBoxLayout(sidebar)
-        navigation.setContentsMargins(22, 30, 22, 25)
-        logo = QLabel()
-        logo.setPixmap(QPixmap(str(ASSETS / "icon.png")).scaled(42, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        navigation.addWidget(logo)
-        navigation.addWidget(label("DeskPDF", "brand"))
-        navigation.addWidget(label("Your PDFs, at hand.", "muted"))
-        navigation.addSpacing(35)
+        shell = QVBoxLayout(root)
+        shell.setContentsMargins(24, 0, 24, 12)
+        self.topbar = QFrame(objectName="topbar")
+        navigation = QVBoxLayout(self.topbar)
+        navigation.setContentsMargins(18, 12, 18, 10)
+        top = QHBoxLayout()
+        top.addWidget(label("DeskPDF", "brand"))
+        top.addWidget(label("LOCAL PDF STUDIO", "eyebrow"))
+        top.addStretch()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Find a tool…  Ctrl+K")
+        self.search.setFixedWidth(260)
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self.search_tools)
+        top.addWidget(self.search)
+        settings = button("Settings", self.show_settings)
+        top.addWidget(settings)
+        navigation.addLayout(top)
+        categories = QHBoxLayout()
         self.nav_buttons = {}
         for group in ["All tools", "Organize", "Optimize", "Convert", "Edit & sign", "Security"]:
             item = button(group, lambda checked=False, value=group: self.show_catalog(value), "nav")
             item.setCheckable(True)
             self.nav_buttons[group] = item
-            navigation.addWidget(item)
-        navigation.addStretch()
-        navigation.addWidget(label("●  Local by design", "muted"))
-        navigation.addWidget(label("No account. No uploads.\nOpen source, always.", "muted"))
-        navigation.addSpacing(12)
-        navigation.addWidget(button("About DeskPDF", self.about))
-        shell.addWidget(sidebar)
+            categories.addWidget(item)
+        categories.addStretch()
+        self.active_title = label("Choose a tool", "muted")
+        categories.addWidget(self.active_title)
+        navigation.addLayout(categories)
+        shell.addWidget(self.topbar)
         self.stack = QStackedWidget()
         shell.addWidget(self.stack, 1)
         self.build_catalog()
@@ -156,22 +162,30 @@ class Window(QMainWindow):
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.choose_files)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "topbar"):
+            self.topbar.setFixedHeight(max(120, self.height() // 6))
+
+    def search_tools(self):
+        if hasattr(self, "cards"):
+            if self.stack.currentIndex() != 0:
+                self.show_catalog()
+            self.filter_catalog()
+
+    def show_settings(self):
+        menu = QMenu(self)
+        motion = menu.addAction("Animated background")
+        motion.setCheckable(True)
+        motion.setChecked(self.centralWidget().timer.isActive())
+        motion.triggered.connect(lambda checked: self.centralWidget().timer.start() if checked else self.centralWidget().timer.stop())
+        menu.addAction("About DeskPDF", self.about)
+        menu.exec(self.cursor().pos())
+
     def build_catalog(self):
-        page = QWidget()
+        page = QWidget(objectName="catalog")
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(42, 34, 42, 24)
-        layout.addWidget(label("THE LOCAL PDF WORKBENCH", "eyebrow"))
-        layout.addSpacing(8)
-        layout.addWidget(label("A little less paperwork.", "headline"))
-        layout.addWidget(label("Choose a tool. Add your files. Get on with your day.", "muted"))
-        layout.addSpacing(18)
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Find a tool…                                    Ctrl+K")
-        self.search.setClearButtonEnabled(True)
-        self.search.setAccessibleName("Find a PDF tool")
-        self.search.textChanged.connect(self.filter_catalog)
-        layout.addWidget(self.search)
-        layout.addSpacing(12)
+        layout.setContentsMargins(14, 24, 14, 8)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         self.catalog = QWidget(objectName="catalog")
@@ -202,8 +216,11 @@ class Window(QMainWindow):
         query = self.search.text().casefold()
         tools = [tool for tool in TOOLS if (self.group == "All tools" or tool.group == self.group) and query in f"{tool.title} {tool.description} {tool.group}".casefold()]
         for index, tool in enumerate(tools):
-            card = button(f"{tool.symbol}   {tool.title}\n\n{tool.group}   →", lambda checked=False, value=tool: self.select_tool(value), "card")
-            card.setMinimumHeight(112)
+            card = button(f"{tool.title}", lambda checked=False, value=tool: self.select_tool(value), "card")
+            card.setIcon(tool_icon(tool))
+            card.setIconSize(QSize(72, 72))
+            card.setMinimumHeight(138)
+            card.setAccessibleName(tool.title + ": " + tool.description)
             card.setToolTip(tool.description)
             self.cards.addWidget(card, index // 3, index % 3)
         if not tools:
@@ -220,16 +237,17 @@ class Window(QMainWindow):
     def build_workbench(self):
         self.workbench = QWidget()
         layout = QVBoxLayout(self.workbench)
-        layout.setContentsMargins(34, 28, 34, 22)
-        layout.addWidget(button("←  All tools", lambda: self.show_catalog()))
-        self.title = label("", "headline")
+        layout.setContentsMargins(20, 18, 20, 16)
+        # The top navigation provides the return path for every workbench.
+        self.title = label("", "section")
         self.description = label("", "muted")
-        layout.addWidget(self.title)
+        self.title.hide()
         layout.addWidget(self.description)
         layout.addSpacing(16)
         columns = QHBoxLayout()
         layout.addLayout(columns, 1)
         settings_scroll = QScrollArea()
+        self.settings_scroll = settings_scroll
         settings_scroll.setWidgetResizable(True)
         settings_scroll.setMinimumWidth(310)
         settings = QWidget(objectName="catalog")
@@ -311,6 +329,9 @@ class Window(QMainWindow):
     def select_tool(self, tool):
         self.current_tool = tool
         self.title.setText(tool.title)
+        self.active_title.setText(tool.title)
+        self.settings_scroll.setMaximumWidth(280 if tool.id == "merge" else 500)
+        self.settings_scroll.setMinimumWidth(240)
         self.description.setText(tool.description)
         self.fields.clear()
         while self.form.rowCount():
@@ -506,7 +527,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.1.2\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.2.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
