@@ -416,7 +416,7 @@ class Window(QMainWindow):
             for index in range(self.file_list.count()):
                 source = self.file_list.item(index)
                 name = Path(source.data(Qt.ItemDataRole.UserRole)).name
-                source.setText(f"{name}\nPages: {source.data(MERGE_PAGES_ROLE) or 'all'}")
+                source.setText(name)
         item = self.file_list.currentItem()
         self.merge_pages.blockSignals(True)
         self.merge_pages.setText((item.data(MERGE_PAGES_ROLE) or "all") if item else "all")
