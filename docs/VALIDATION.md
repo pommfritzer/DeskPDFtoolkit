@@ -11,3 +11,9 @@ Validated on Windows 11 x64, 31 October 2026, with Python 3.14.6, Qt/PySide6 6.1
 - A packaging failure caused by an unrelated ICU DLL on the development environment's PATH was corrected by isolating dependency discovery. Bundled startup is now a required build step before installer compilation.
 
 These checks are not a substitute for testing on clean Windows 10 and Windows 11 machines, different DPI settings, screen readers, complex real-world documents, or a corpus of malformed PDFs. The initial release is unsigned and should be treated as a preview.
+
+## 0.1.1: merge page selection
+
+All 34 tests pass. New checks verify different selections for each source, page order and duplicates, file-specific invalid-range errors, destination preservation on failure, and selection persistence through file changes, reordering, tool switching and removal. The UI test also saves an actual merged PDF through the workbench and verifies the submitted per-file choices.
+
+The merge view was rendered and inspected. The Windows bundle passed its startup checks, the 0.1.1 installer upgraded the installed application successfully, and the updated app reopened on Merge PDF.

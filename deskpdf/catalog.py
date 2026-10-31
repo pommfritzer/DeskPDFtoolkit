@@ -14,7 +14,7 @@ class Tool:
 
 
 TOOLS = [
-    Tool("merge", "Merge PDF", "Bring documents together, in your order.", "Organize", "⊕", multiple=True),
+    Tool("merge", "Merge PDF", "Choose pages from each PDF, then bring them together in your order.", "Organize", "⊕", multiple=True),
     Tool("extract", "Extract pages", "Keep just the pages you need.", "Organize", "↗", ("pages",)),
     Tool("split", "Split PDF", "Save each selected page as its own PDF in a ZIP.", "Organize", "⋈", ("pages",), "zip"),
     Tool("delete", "Delete pages", "Remove pages from a document.", "Organize", "−", ("pages",)),

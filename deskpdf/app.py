@@ -18,6 +18,7 @@ from deskpdf.engine import open_document, run_tool
 from deskpdf.theme import STYLE
 
 ASSETS = Path(__file__).parent / "assets"
+MERGE_PAGES_ROLE = Qt.ItemDataRole.UserRole + 1
 FIELDS = {
     "pages": ("Pages", "all", "Examples: 1, 3-5 or 5-1. Page order is preserved."),
     "rotation": ("Turn clockwise", "90", "Degrees"),
@@ -259,6 +260,20 @@ class Window(QMainWindow):
         self.form.setContentsMargins(0, 10, 0, 0)
         self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         left.addWidget(self.form_widget)
+        self.merge_pages_widget = QWidget()
+        merge_settings = QVBoxLayout(self.merge_pages_widget)
+        merge_settings.setContentsMargins(0, 10, 0, 0)
+        merge_settings.addWidget(label("Pages from selected PDF", "section"))
+        self.merge_source = label("Select a PDF above.", "muted")
+        self.merge_source.setTextFormat(Qt.TextFormat.PlainText)
+        merge_settings.addWidget(self.merge_source)
+        self.merge_pages = QLineEdit("all")
+        self.merge_pages.setAccessibleName("Pages to merge from selected PDF")
+        self.merge_pages.textChanged.connect(self.update_merge_pages)
+        merge_settings.addWidget(self.merge_pages)
+        merge_settings.addWidget(label("Use all, or enter pages such as 1, 3-5.\nSelect another file above to choose its pages.", "muted"))
+        merge_settings.addWidget(button("Use only the page in preview", self.merge_current_page))
+        left.addWidget(self.merge_pages_widget)
         self.no_options = label("Ready when you are. This tool needs no extra settings.", "muted")
         left.addWidget(self.no_options)
         left.addStretch()
@@ -335,7 +350,9 @@ class Window(QMainWindow):
                 self.form.addRow(title, row)
             else:
                 self.form.addRow(title, widget)
-        self.no_options.setVisible(not tool.fields)
+        self.merge_pages_widget.setVisible(tool.id == "merge")
+        self.load_merge_pages()
+        self.no_options.setVisible(not tool.fields and tool.id != "merge")
         self.order_hint.setVisible(tool.multiple)
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove if tool.multiple else QListWidget.DragDropMode.NoDragDrop)
         self.status.clear()
@@ -366,6 +383,7 @@ class Window(QMainWindow):
                 self.paths.append(path)
                 item = QListWidgetItem(path.name)
                 item.setData(Qt.ItemDataRole.UserRole, str(path))
+                item.setData(MERGE_PAGES_ROLE, "all")
                 item.setToolTip(str(path))
                 self.file_list.addItem(item)
         if self.file_list.currentRow() < 0:
@@ -386,7 +404,32 @@ class Window(QMainWindow):
 
     def file_selected(self, row):
         self.page_index = 0
+        self.load_merge_pages()
         self.refresh_preview()
+
+    def load_merge_pages(self):
+        if self.current_tool and self.current_tool.id == "merge":
+            for index in range(self.file_list.count()):
+                source = self.file_list.item(index)
+                name = Path(source.data(Qt.ItemDataRole.UserRole)).name
+                source.setText(f"{name}\nPages: {source.data(MERGE_PAGES_ROLE) or 'all'}")
+        item = self.file_list.currentItem()
+        self.merge_pages.blockSignals(True)
+        self.merge_pages.setText((item.data(MERGE_PAGES_ROLE) or "all") if item else "all")
+        self.merge_pages.blockSignals(False)
+        self.merge_pages_widget.setEnabled(item is not None)
+        self.merge_source.setText(Path(item.data(Qt.ItemDataRole.UserRole)).name if item else "Select a PDF above.")
+
+    def update_merge_pages(self, expression):
+        item = self.file_list.currentItem()
+        if item:
+            item.setData(MERGE_PAGES_ROLE, expression)
+            name = Path(item.data(Qt.ItemDataRole.UserRole)).name
+            item.setText(f"{name}\nPages: {expression.strip() or 'all'}")
+
+    def merge_current_page(self):
+        if self.preview.page_size:
+            self.merge_pages.setText(str(self.page_index + 1))
 
     def selected_path(self):
         item = self.file_list.currentItem()
@@ -447,6 +490,8 @@ class Window(QMainWindow):
         if not output:
             return
         options = {"password": self.password.text()}
+        if self.current_tool.id == "merge":
+            options["merge_pages"] = [self.file_list.item(index).data(MERGE_PAGES_ROLE) or "all" for index in range(self.file_list.count())]
         for name, widget in self.fields.items():
             options[name] = widget.toPlainText() if isinstance(widget, QPlainTextEdit) else widget.currentText() if isinstance(widget, QComboBox) else widget.text()
         self.worker = Worker(self.current_tool.id, list(self.paths), Path(output), options)
@@ -479,7 +524,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.1.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.1.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

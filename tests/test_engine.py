@@ -47,6 +47,31 @@ def test_merge(source, tmp_path):
         assert len(result) == 6
 
 
+def test_merge_selected_pages_from_each_file(source, tmp_path):
+    second = tmp_path / "second.pdf"
+    with pdf.open() as document:
+        for number in range(1, 4):
+            document.new_page().insert_text((40, 60), f"Second {number}")
+        document.save(second)
+    output = tmp_path / "selected-merge.pdf"
+    run_tool("merge", [source, second], output, {"merge_pages": ["3,1,1", "2-1"]})
+    with pdf.open(output) as result:
+        assert [page.get_text().strip() for page in result] == [
+            "Page 3: secret document", "Page 1: secret document", "Page 1: secret document",
+            "Second 2", "Second 1",
+        ]
+
+
+def test_invalid_merge_selection_preserves_destination(source, tmp_path):
+    output = tmp_path / "merged.pdf"
+    output.write_bytes(b"existing destination")
+    with pytest.raises(ToolError, match="source.pdf: Page numbers"):
+        run_tool("merge", [source, source], output, {"merge_pages": ["1", "4"]})
+    assert output.read_bytes() == b"existing destination"
+    with pytest.raises(ToolError, match="each input PDF"):
+        run_tool("merge", [source, source], output, {"merge_pages": ["1"]})
+
+
 def test_original_and_failure_are_safe(source, tmp_path):
     original = source.read_bytes()
     with pytest.raises(ToolError):

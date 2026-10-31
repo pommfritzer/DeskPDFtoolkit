@@ -117,8 +117,20 @@ def _process(tool, paths, target, options):
         pages = parse_pages(options.get("pages", "all"), len(document))
         unique_pages = list(dict.fromkeys(pages))
         if tool == "merge":
-            for path in paths[1:]:
+            selections = options.get("merge_pages", ["all"] * len(paths))
+            if not isinstance(selections, list) or len(selections) != len(paths):
+                raise ToolError("Choose a page selection for each input PDF.")
+
+            def select_source_pages(source, expression, path):
+                try:
+                    source.select(parse_pages(expression, len(source)))
+                except ToolError as error:
+                    raise ToolError(f"{path.name}: {error}") from None
+
+            select_source_pages(document, selections[0], paths[0])
+            for path, expression in zip(paths[1:], selections[1:]):
                 with open_document(path, password) as source:
+                    select_source_pages(source, expression, path)
                     document.insert_pdf(source)
         elif tool in {"extract", "reorder"}:
             document.select(pages)
