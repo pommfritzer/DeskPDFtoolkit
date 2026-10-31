@@ -57,10 +57,15 @@ def test_merge_page_choices_follow_files(tmp_path):
     window.sync_paths()
     assert window.file_list.item(0).data(MERGE_PAGES_ROLE) == "2"
     assert window.paths == paths[::-1]
+    window.file_list.setCurrentRow(0)
+    window.visual_merge.toggle(window.visual_merge.pages.item(1))
+    window.file_list.setCurrentRow(1)
+    window.visual_merge.toggle(window.visual_merge.pages.item(2))
+    window.visual_merge.toggle(window.visual_merge.pages.item(0))
     output = tmp_path / "merged.pdf"
     with patch.object(QFileDialog, "getSaveFileName", return_value=(str(output), "")):
         window.start_job()
-    assert window.worker.arguments[3]["merge_pages"] == ["2", "3,1"]
+    assert window.worker.arguments[3]["merge_pages"] == ["2", "3", "1"]
     assert window.worker.wait(10000)
     app.processEvents()
     with pdf.open(output) as document:

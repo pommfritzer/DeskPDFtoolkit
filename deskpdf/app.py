@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from deskpdf.catalog import TOOLS, TOOL_BY_ID
 from deskpdf.engine import open_document, run_tool
 from deskpdf.theme import STYLE
+from deskpdf.merge_view import MergeView
 
 ASSETS = Path(__file__).parent / "assets"
 MERGE_PAGES_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -274,6 +275,8 @@ class Window(QMainWindow):
         merge_settings.addWidget(label("Use all, or enter pages such as 1, 3-5.\nSelect another file above to choose its pages.", "muted"))
         merge_settings.addWidget(button("Use only the page in preview", self.merge_current_page))
         left.addWidget(self.merge_pages_widget)
+        self.visual_merge = MergeView()
+        left.addWidget(self.visual_merge)
         self.no_options = label("Ready when you are. This tool needs no extra settings.", "muted")
         left.addWidget(self.no_options)
         left.addStretch()
@@ -350,7 +353,8 @@ class Window(QMainWindow):
                 self.form.addRow(title, row)
             else:
                 self.form.addRow(title, widget)
-        self.merge_pages_widget.setVisible(tool.id == "merge")
+        self.merge_pages_widget.hide()
+        self.visual_merge.setVisible(tool.id == "merge")
         self.load_merge_pages()
         self.no_options.setVisible(not tool.fields and tool.id != "merge")
         self.order_hint.setVisible(tool.multiple)
@@ -440,6 +444,11 @@ class Window(QMainWindow):
         self.refresh_preview()
 
     def refresh_preview(self):
+        if self.current_tool and self.current_tool.id == "merge":
+            try:
+                self.visual_merge.refresh(self.selected_path(), self.paths, self.password.text())
+            except Exception as error:
+                self.status.setText(str(error))
         self.preview.clear()
         self.preview.page_size = None
         path = self.selected_path()
@@ -494,7 +503,15 @@ class Window(QMainWindow):
             options["merge_pages"] = [self.file_list.item(index).data(MERGE_PAGES_ROLE) or "all" for index in range(self.file_list.count())]
         for name, widget in self.fields.items():
             options[name] = widget.toPlainText() if isinstance(widget, QPlainTextEdit) else widget.currentText() if isinstance(widget, QComboBox) else widget.text()
-        self.worker = Worker(self.current_tool.id, list(self.paths), Path(output), options)
+        job_paths = list(self.paths)
+        if self.current_tool.id == "merge":
+            selected = self.visual_merge.selection()
+            if not selected:
+                self.status.setText("Click page thumbnails to include them first.")
+                return
+            job_paths = [Path(path) for path, page in selected]
+            options["merge_pages"] = [str(page + 1) for path, page in selected]
+        self.worker = Worker(self.current_tool.id, job_paths, Path(output), options)
         self.worker.completed.connect(self.job_done)
         self.worker.failed.connect(self.job_failed)
         self.worker.finished.connect(self.job_finished)

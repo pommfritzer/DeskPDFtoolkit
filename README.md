@@ -26,7 +26,7 @@ Target: Windows 10/11, x64. The initial build is unsigned; Windows may show an u
 
 Page selections accept `all`, `1,3-5`, descending ranges such as `5-1`, and duplicates for extraction/reordering. Drag input files to set merge order. Click a document preview to position text or a signature. Coordinates and dimensions use PDF points (72 points per inch).
 
-For merging, select each input PDF in the file list and enter its own page selection under **Pages from selected PDF**. Use `all` to include the whole file, or an expression such as `1,3-5` to include only those pages. The entered order and duplicates are preserved. **Use only the page in preview** selects the currently viewed page. Page choices stay with their files when you reorder the list or switch tools.
+For merging, select a PDF in the file list and click its page thumbnails to include or remove pages. Selected pages appear in the output list. Drag those pages into any order, including interleaving pages from different PDFs. No page-number entry is needed.
 
 ![DeskPDF workbench](docs/screenshots/workbench.png)
 
