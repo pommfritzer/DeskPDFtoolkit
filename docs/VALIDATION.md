@@ -1,5 +1,9 @@
 # Initial release validation
 
+## 0.5.0 visual object editor
+
+All 55 tests pass. New tests verify exported text, embedded pictures, vector rectangle/ellipse objects, preservation of original PDF content, movement/resizing state, undo/redo, edits across pages and cancellation/discard behaviour for Escape. A rendered editor view was inspected. The editor works with newly added objects; it does not reconstruct arbitrary original document text into editable paragraphs.
+
 ## 0.2.1 compact toolbar
 
 All 35 tests pass. The navigation test checks the 30% height reduction, full window width, zero horizontal offset, and removal of category buttons. Updated gallery and workbench renders were inspected before packaging.

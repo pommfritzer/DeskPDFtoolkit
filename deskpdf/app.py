@@ -145,6 +145,7 @@ class Window(QMainWindow):
         self.add_page_action = button("+ Add page", self.add_editor_page)
         self.add_page_action.hide()
         top.addWidget(self.add_page_action)
+        top.addWidget(button("Editor", self.open_visual_editor))
         top.addWidget(settings)
         navigation.addLayout(top)
         shell.addWidget(self.topbar)
@@ -161,6 +162,22 @@ class Window(QMainWindow):
         QShortcut(QKeySequence("Ctrl+0"), self, activated=lambda: self.scale_ui(reset=True))
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.choose_files)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
+
+    def open_visual_editor(self):
+        if self.worker and self.worker.isRunning():
+            return
+        path = self.selected_path()
+        if path is None:
+            selected, _ = QFileDialog.getOpenFileName(self, "Edit PDF", "", "PDF (*.pdf)")
+            if not selected:
+                return
+            path = Path(selected)
+        try:
+            from deskpdf.editor import VisualEditor
+            editor = VisualEditor(path, self.password.text(), self)
+            editor.exec()
+        except Exception as error:
+            QMessageBox.warning(self, "Could not open editor", str(error))
 
     def scale_ui(self, amount=0, reset=False):
         import re
@@ -601,7 +618,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.4.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
