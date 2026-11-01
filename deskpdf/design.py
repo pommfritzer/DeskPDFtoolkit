@@ -1,9 +1,22 @@
-import math
-
-from PySide6.QtCore import QByteArray, Qt, QTimer
+from PySide6.QtCore import QByteArray, Qt, QTimer, QRectF
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QWidget
+
+
+def password_icon():
+    pixmap = QPixmap(48, 48)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor("#cce8d6"), 3))
+    painter.drawRoundedRect(QRectF(6, 20, 23, 22), 3, 3)
+    painter.drawArc(QRectF(10, 6, 15, 26), 0, 180 * 16)
+    painter.drawEllipse(QRectF(29, 9, 10, 10))
+    painter.drawLine(34, 19, 34, 34)
+    painter.drawLine(34, 28, 41, 28)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class AmbientBackground(QWidget):
@@ -13,7 +26,7 @@ class AmbientBackground(QWidget):
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
-        self.timer.start()
+        # The dot background is static; no continuous repaint is needed.
 
     def advance(self):
         if self.window().isMinimized() or not self.isVisible():
@@ -29,21 +42,13 @@ class AmbientBackground(QWidget):
         gradient.setColorAt(.55, QColor("#235c48"))
         gradient.setColorAt(1, QColor("#101f30"))
         painter.fillRect(self.rect(), gradient)
-        for band in range(7):
-            wave = QPainterPath()
-            for x in range(-40, self.width() + 50, 16):
-                y = self.height() * (.42 + band * .055) + math.sin(x / 360 + self.phase + band * .22) * 95 + math.sin(x / 650 - self.phase) * 60
-                if x == -40:
-                    wave.moveTo(x, y)
-                else:
-                    wave.lineTo(x, y)
-            painter.setPen(QPen(QColor(133, 210, 167, 14 + band * 2), 18 + band * 9))
-            painter.drawPath(wave)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(177, 190, 188, 65))
-        for x in range(20, self.width(), 34):
-            for y in range(20, self.height(), 34):
-                painter.drawEllipse(x, y, 2, 2)
+        for spacing, diameter, alpha in ((51, 2, 45), (136, 6, 90)):
+            painter.setBrush(QColor(177, 190, 188, alpha))
+            for x in range(20, self.width(), spacing):
+                for y in range(20, self.height(), spacing):
+                    painter.drawEllipse(x, y, diameter, diameter)
+
 
 
 def tool_icon(tool):

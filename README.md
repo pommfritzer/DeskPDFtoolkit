@@ -2,7 +2,7 @@
 
 **Your PDFs, at hand.** A quiet, local-first PDF workbench for Windows.
 
-Version 0.2 introduces a full-width single-row toolbar without category buttons, an animated green ambient background with a grey dot grid, and a gallery led by large vector tool icons. Use Settings to pause background animation. In Merge PDF, the Page size slider enlarges thumbnails from 140 to 650 pixels and re-renders pages sharply without changing your selection or order.
+Version 0.2 introduces a full-width single-row toolbar without category buttons, an animated green ambient background with a grey dot grid, and a gallery led by large vector tool icons. The current background is a static green gradient with layered dot grids. In Merge PDF, the Page size slider enlarges thumbnails from 140 to 650 pixels and re-renders pages sharply without changing your selection or order.
 
 ![PDFtoolkit26 tool library](docs/screenshots/library.png)
 
@@ -10,7 +10,7 @@ PDFtoolkit26 brings common PDF jobs into one native desktop app: choose a tool, 
 
 ## Install
 
-Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.4.0-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
+Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.4.1-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
 
 The optional Explorer integration adds **Open in PDFtoolkit26**, **Compress with PDFtoolkit26**, and **Extract pages with PDFtoolkit26** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
 
@@ -74,7 +74,7 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then:
 
 To upgrade the local installation and open Merge PDF, run `./scripts/install.ps1` from the project folder. It uses the project version's installer, retains installer task preferences, closes the previous app through the installer, and launches once afterward. Installation stays in `%LOCALAPPDATA%\Programs\PDFtoolkit26`; reinstalling updates the same Windows uninstall entry. Disabling Explorer integration or the desktop shortcut during setup removes those entries.
 
-The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.4.0-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.4.0` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
+The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.4.1-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.4.1` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
 
 ## Architecture
 
@@ -98,3 +98,7 @@ Use **Add page** in the editor to create an A4 title or divider page. The live c
 ### Page editing in 0.4
 
 Editor controls are grouped in the expanded top partition. Each PDF set uses a numbered colour accent. The first-page arrow expands the set; the last-page arrow collapses it without excluding pages from export. Drag thumbnails across sets, or use **Move page to…** for an exact document position. Each thumbnail has delete above crop at the top right. The crop overlay supports dragging edges, corners or drawing a new rectangle; Reset restores the current crop boundary. Cropping hides margins and is not secure redaction. Page deletion affects this editing sequence, not your original files.
+
+### 0.4.1 interface controls
+
+Ctrl++ (or Ctrl+=) enlarges the interface, Ctrl+- reduces it, and Ctrl+0 resets it. Thumbnail size remains independently adjustable. Background dots use 6 px marks on a 136 px grid and 2 px marks on a 51 px grid. Swirls and continuous background repainting are removed. The lock-and-key control reveals a masked **input PDF password** field with a green arrow confirmation; it does not set output encryption. Use Protect PDF for that.

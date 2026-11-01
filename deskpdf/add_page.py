@@ -41,7 +41,7 @@ class AddPageDialog(QDialog):
         self.setWindowTitle("Add page · PDFtoolkit26")
         self.resize(620, 760)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("A quiet page, a few words."))
+
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.preview, 1)

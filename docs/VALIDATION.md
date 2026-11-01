@@ -39,3 +39,7 @@ All 49 tests pass. Twelve combinations verify exact horizontal and vertical cent
 ## 0.4.0 page editor
 
 All 51 tests pass. New tests verify source-preserving per-page crop export, set collapse/expand without selection loss, and deletion surviving grid refresh. The expanded control partition and page buttons were rendered and inspected.
+
+## 0.4.1 static dots and compact input unlock
+
+All 52 tests pass, including UI scale changes/reset, input-password disclosure, and the inactive background timer. Offscreen UI tests now explicitly delete their windows before QApplication teardown. This removes an intermittent teardown failure that previously occurred after the tests themselves had passed.

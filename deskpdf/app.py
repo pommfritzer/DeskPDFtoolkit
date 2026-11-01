@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from deskpdf.catalog import TOOLS, TOOL_BY_ID
 from deskpdf.engine import open_document, run_tool
 from deskpdf.theme import STYLE
-from deskpdf.design import AmbientBackground, tool_icon
+from deskpdf.design import AmbientBackground, tool_icon, password_icon
 from deskpdf.merge_view import MergeView
 
 ASSETS = Path(__file__).parent / "assets"
@@ -131,8 +131,8 @@ class Window(QMainWindow):
         navigation.setContentsMargins(30, 10, 30, 10)
         top = QHBoxLayout()
         top.addWidget(button("PDFtoolkit26", lambda: self.show_catalog(), "brand"))
-        top.addWidget(label("LOCAL PDF STUDIO", "eyebrow"))
-        self.active_title = label("Choose a tool", "muted")
+
+        self.active_title = label("", "muted")
         top.addWidget(self.active_title)
         top.addStretch()
         self.search = QLineEdit()
@@ -154,8 +154,42 @@ class Window(QMainWindow):
         self.build_catalog()
         self.build_workbench()
         self.show_catalog()
+        self.ui_scale = 1.0
+        for shortcut in ("Ctrl++", "Ctrl+="):
+            QShortcut(QKeySequence(shortcut), self, activated=lambda: self.scale_ui(.1))
+        QShortcut(QKeySequence("Ctrl+-"), self, activated=lambda: self.scale_ui(-.1))
+        QShortcut(QKeySequence("Ctrl+0"), self, activated=lambda: self.scale_ui(reset=True))
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.choose_files)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
+
+    def scale_ui(self, amount=0, reset=False):
+        import re
+        self.ui_scale = 1.0 if reset else round(max(.7, min(1.6, self.ui_scale + amount)), 2)
+        scaled = re.sub(r"(\d+(?:\.\d+)?)px", lambda match: f"{float(match.group(1)) * self.ui_scale:g}px", STYLE)
+        QApplication.instance().setStyleSheet(scaled)
+        for index in range(self.cards.count()):
+            card = self.cards.itemAt(index).widget()
+            if isinstance(card, QPushButton):
+                card.setIconSize(QSize(round(72 * self.ui_scale), round(72 * self.ui_scale)))
+                card.setMinimumHeight(round(138 * self.ui_scale))
+
+    def toggle_input_password(self):
+        self.password_panel.setVisible(self.password_panel.isHidden())
+        if self.password_panel.isVisible():
+            self.password.setFocus()
+
+    def confirm_input_password(self):
+        self.refresh_preview()
+        path = self.selected_path()
+        if path:
+            try:
+                with open_document(path, self.password.text()):
+                    pass
+            except Exception as error:
+                self.status.setText(str(error))
+                return
+        self.password_panel.hide()
+        self.status.clear()
 
     def add_editor_page(self):
         if self.worker and self.worker.isRunning():
@@ -178,10 +212,6 @@ class Window(QMainWindow):
 
     def show_settings(self):
         menu = QMenu(self)
-        motion = menu.addAction("Animated background")
-        motion.setCheckable(True)
-        motion.setChecked(self.centralWidget().timer.isActive())
-        motion.triggered.connect(lambda checked: self.centralWidget().timer.start() if checked else self.centralWidget().timer.stop())
         menu.addAction("About PDFtoolkit26", self.about)
         menu.exec(self.cursor().pos())
 
@@ -197,7 +227,7 @@ class Window(QMainWindow):
         self.cards.setSpacing(12)
         scroll.setWidget(self.catalog)
         layout.addWidget(scroll, 1)
-        layout.addWidget(label("Drop files anywhere to start  ·  Originals stay untouched  ·  Ctrl+O to open", "muted"))
+
         self.stack.addWidget(page)
 
     def show_catalog(self, group="All tools"):
@@ -208,7 +238,7 @@ class Window(QMainWindow):
         self.description.hide()
         self.topbar.setFixedHeight(round(self.height() * .22))
         self.group = group
-        self.active_title.setText("Choose a tool")
+        self.active_title.setText("")
         self.stack.setCurrentIndex(0)
         self.filter_catalog()
 
@@ -260,7 +290,7 @@ class Window(QMainWindow):
         settings = QWidget(objectName="catalog")
         left = QVBoxLayout(settings)
         left.setContentsMargins(0, 0, 16, 0)
-        left.addWidget(label("1   YOUR FILES", "eyebrow"))
+        left.addWidget(label("Files", "eyebrow"))
         self.file_list = QListWidget()
         self.file_list.setFixedHeight(65)
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
@@ -278,9 +308,27 @@ class Window(QMainWindow):
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.password.setAccessibleName("Document opening password")
         self.password.editingFinished.connect(self.refresh_preview)
-        left.addWidget(self.password)
+        self.password.setPlaceholderText("Password for input PDF")
+        self.password_panel = QWidget()
+        password_row = QHBoxLayout(self.password_panel)
+        password_row.setContentsMargins(0, 0, 0, 0)
+        password_row.addWidget(self.password)
+        confirm = button("→", self.confirm_input_password, "passwordConfirm")
+        confirm.setFixedSize(34, 34)
+        confirm.setToolTip("Unlock input PDF")
+        password_row.addWidget(confirm)
+        self.password_panel.hide()
+        self.password_button = button("", self.toggle_input_password)
+        self.password_button.setIcon(password_icon())
+        self.password_button.setIconSize(QSize(24, 24))
+        self.password_button.setFixedWidth(46)
+        self.password_button.setToolTip("Unlock a password-protected input PDF")
+        self.password_button.setAccessibleName("Input PDF password")
+        left.addWidget(self.password_button)
+        left.addWidget(self.password_panel)
+        self.password.returnPressed.connect(self.confirm_input_password)
         left.addSpacing(4)
-        self.settings_title = label("2   MAKE IT YOURS", "eyebrow")
+        self.settings_title = label("Options", "eyebrow")
         left.addWidget(self.settings_title)
         self.form_widget = QWidget()
         self.form = QFormLayout(self.form_widget)
@@ -290,7 +338,7 @@ class Window(QMainWindow):
         self.visual_merge = MergeView()
         self.visual_merge.page_created.connect(lambda path: self.add_paths([path]))
         self.no_options = label("Ready when you are. This tool needs no extra settings.", "muted")
-        left.addWidget(self.no_options)
+        self.no_options.hide()
         left.addStretch()
         settings_scroll.setWidget(settings)
         self.editor_controls = QWidget()
@@ -319,7 +367,7 @@ class Window(QMainWindow):
         paging.addWidget(button("→", lambda: self.change_page(1)))
         right.addLayout(paging)
         self.preview_hint = label("Preview shows your original. Open the saved file to review changes.", "muted")
-        right.addWidget(self.preview_hint)
+        self.preview_hint.hide()
         self.preview_frame = preview_frame
         columns.addWidget(preview_frame, 6)
         columns.addWidget(self.visual_merge, 9)
@@ -331,7 +379,7 @@ class Window(QMainWindow):
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.topbar.layout().addWidget(self.status)
         footer = QHBoxLayout()
-        footer.addWidget(label("Saved as a new file. Your original stays yours.", "muted"), 1)
+        footer.addStretch()
         self.open_result = button("Open result ↗", self.open_output)
         self.open_result.hide()
         self.topbar.layout().addWidget(self.open_result)
@@ -343,7 +391,7 @@ class Window(QMainWindow):
     def select_tool(self, tool):
         self.add_page_action.show()
         self.editor_controls.show()
-        self.description.show()
+        self.description.hide()
         self.topbar.setFixedHeight(round(self.height() * .40))
         self.visual_merge.controls.setVisible(tool.id == "merge")
         self.current_tool = tool
@@ -385,8 +433,8 @@ class Window(QMainWindow):
         self.settings_title.setVisible(tool.id != "merge")
         self.order_hint.setText("Arrange pages directly in the thumbnail grid." if tool.id == "merge" else "Drag files to change their order.")
         self.preview_frame.setVisible(tool.id != "merge")
-        self.no_options.setVisible(not tool.fields and tool.id != "merge")
-        self.order_hint.setVisible(tool.multiple and tool.id != "merge")
+        self.no_options.hide()
+        self.order_hint.hide()
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove if tool.multiple else QListWidget.DragDropMode.NoDragDrop)
         self.status.clear()
         self.open_result.hide()
@@ -553,7 +601,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.4.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.4.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

@@ -86,3 +86,23 @@ def test_top_navigation_and_motion_control():
     background.timer.stop()
     assert not background.timer.isActive()
     window.close()
+
+
+def test_ui_scale_and_password_disclosure():
+    app = QApplication.instance() or QApplication([])
+    window = Window()
+    assert window.password_panel.isHidden()
+    window.show()
+    from deskpdf.catalog import TOOL_BY_ID
+    window.select_tool(TOOL_BY_ID["merge"])
+    window.toggle_input_password()
+    assert not window.password_panel.isHidden()
+    window.confirm_input_password()
+    assert window.password_panel.isHidden()
+    window.scale_ui(.1)
+    assert window.ui_scale == 1.1
+    window.scale_ui(-.1)
+    assert window.ui_scale == 1.0
+    window.scale_ui(reset=True)
+    assert not window.centralWidget().timer.isActive()
+    window.close()
