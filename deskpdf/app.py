@@ -168,7 +168,7 @@ class Window(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "topbar"):
-            self.topbar.setFixedHeight(round(max(120, self.height() // 6) * .7))
+            self.topbar.setFixedHeight(round(self.height() * (.40 if hasattr(self, "stack") and self.stack.currentIndex() == 1 else .22)))
 
     def search_tools(self):
         if hasattr(self, "cards"):
@@ -204,6 +204,9 @@ class Window(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
         self.add_page_action.hide()
+        self.editor_controls.hide()
+        self.description.hide()
+        self.topbar.setFixedHeight(round(self.height() * .22))
         self.group = group
         self.active_title.setText("Choose a tool")
         self.stack.setCurrentIndex(0)
@@ -245,7 +248,8 @@ class Window(QMainWindow):
         self.title = label("", "section")
         self.description = label("", "muted")
         self.title.hide()
-        layout.addWidget(self.description)
+        self.topbar.layout().addWidget(self.description)
+        self.description.hide()
         layout.addSpacing(16)
         columns = QHBoxLayout()
         layout.addLayout(columns, 1)
@@ -258,7 +262,7 @@ class Window(QMainWindow):
         left.setContentsMargins(0, 0, 16, 0)
         left.addWidget(label("1   YOUR FILES", "eyebrow"))
         self.file_list = QListWidget()
-        self.file_list.setMaximumHeight(160)
+        self.file_list.setFixedHeight(65)
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.file_list.currentRowChanged.connect(self.file_selected)
         self.file_list.model().rowsMoved.connect(self.sync_paths)
@@ -275,7 +279,7 @@ class Window(QMainWindow):
         self.password.setAccessibleName("Document opening password")
         self.password.editingFinished.connect(self.refresh_preview)
         left.addWidget(self.password)
-        left.addSpacing(18)
+        left.addSpacing(4)
         self.settings_title = label("2   MAKE IT YOURS", "eyebrow")
         left.addWidget(self.settings_title)
         self.form_widget = QWidget()
@@ -289,7 +293,13 @@ class Window(QMainWindow):
         left.addWidget(self.no_options)
         left.addStretch()
         settings_scroll.setWidget(settings)
-        columns.addWidget(settings_scroll, 5)
+        self.editor_controls = QWidget()
+        editor_layout = QHBoxLayout(self.editor_controls)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.addWidget(settings_scroll, 1)
+        editor_layout.addWidget(self.visual_merge.controls, 2)
+        self.topbar.layout().addWidget(self.editor_controls)
+        self.editor_controls.hide()
         preview_frame = QFrame(objectName="preview")
         right = QVBoxLayout(preview_frame)
         right.setContentsMargins(16, 16, 16, 16)
@@ -316,15 +326,15 @@ class Window(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.hide()
-        layout.addWidget(self.progress)
+        self.topbar.layout().addWidget(self.progress)
         self.status = label("", "status")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
-        layout.addWidget(self.status)
+        self.topbar.layout().addWidget(self.status)
         footer = QHBoxLayout()
         footer.addWidget(label("Saved as a new file. Your original stays yours.", "muted"), 1)
         self.open_result = button("Open result ↗", self.open_output)
         self.open_result.hide()
-        footer.addWidget(self.open_result)
+        self.topbar.layout().addWidget(self.open_result)
         self.save = button("Save a copy…", self.start_job, "primary")
         footer.addWidget(self.save)
         layout.addLayout(footer)
@@ -332,6 +342,10 @@ class Window(QMainWindow):
 
     def select_tool(self, tool):
         self.add_page_action.show()
+        self.editor_controls.show()
+        self.description.show()
+        self.topbar.setFixedHeight(round(self.height() * .40))
+        self.visual_merge.controls.setVisible(tool.id == "merge")
         self.current_tool = tool
         self.title.setText(tool.title)
         self.active_title.setText(tool.title)
@@ -372,7 +386,7 @@ class Window(QMainWindow):
         self.order_hint.setText("Arrange pages directly in the thumbnail grid." if tool.id == "merge" else "Drag files to change their order.")
         self.preview_frame.setVisible(tool.id != "merge")
         self.no_options.setVisible(not tool.fields and tool.id != "merge")
-        self.order_hint.setVisible(tool.multiple)
+        self.order_hint.setVisible(tool.multiple and tool.id != "merge")
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove if tool.multiple else QListWidget.DragDropMode.NoDragDrop)
         self.status.clear()
         self.open_result.hide()
@@ -508,6 +522,7 @@ class Window(QMainWindow):
                 return
             job_paths = [Path(path) for path, page in selected]
             options["merge_pages"] = [str(page + 1) for path, page in selected]
+            options["merge_crops"] = [self.visual_merge.crops.get((path, page)) for path, page in selected]
         self.worker = Worker(self.current_tool.id, job_paths, Path(output), options)
         self.worker.completed.connect(self.job_done)
         self.worker.failed.connect(self.job_failed)
@@ -538,7 +553,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.3.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.4.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

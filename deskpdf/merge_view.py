@@ -4,20 +4,73 @@ import uuid
 
 import pymupdf as pdf
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QDialog, QSlider, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import QInputDialog, QStyledItemDelegate, QStyle, QDialog, QSlider, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from deskpdf.engine import open_document
 from deskpdf.add_page import AddPageDialog
+from deskpdf.crop_page import CropPageDialog
+
+
+class PageActions(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        painter.save()
+        color = index.data(Qt.ItemDataRole.UserRole + 4) or "#bde2cd"
+        painter.setPen(QColor(color))
+        painter.drawLine(option.rect.left() + 4, option.rect.top() + 4, option.rect.right() - 4, option.rect.top() + 4)
+        for offset, text in ((8, "×"), (38, "⌗")):
+            rect = option.rect.adjusted(option.rect.width() - 32, offset, -6, -(option.rect.height() - offset - 26))
+            painter.fillRect(rect, QColor("#163f32"))
+            painter.setPen(QPen(QColor(color), 1.5))
+            x, y = rect.left(), rect.top()
+            if text == "×":
+                painter.drawLine(x + 8, y + 8, x + 18, y + 18)
+                painter.drawLine(x + 18, y + 8, x + 8, y + 18)
+            else:
+                painter.drawLine(x + 8, y + 4, x + 8, y + 18)
+                painter.drawLine(x + 8, y + 18, x + 22, y + 18)
+                painter.drawLine(x + 4, y + 8, x + 18, y + 8)
+                painter.drawLine(x + 18, y + 8, x + 18, y + 22)
+        painter.drawText(option.rect.adjusted(8, 8, -40, -option.rect.height() + 34), str(index.data(Qt.ItemDataRole.UserRole + 5) or ""))
+        painter.restore()
 
 
 class PageGrid(QListWidget):
+    order_changed = Signal()
+    delete_page = Signal(int)
+    crop_page = Signal(int)
+    set_action = Signal(int)
+
+    def mouseReleaseEvent(self, event):
+        index = self.indexAt(event.position().toPoint())
+        if index.isValid():
+            rect = self.visualRect(index)
+            x = event.position().x() - rect.left()
+            y = event.position().y() - rect.top()
+            if x > rect.width() - 36 and 8 <= y < 65:
+                row = index.row()
+                self.blockSignals(True)
+                super().mouseReleaseEvent(event)
+                self.blockSignals(False)
+                (self.delete_page if y < 36 else self.crop_page).emit(row)
+                return
+            if x < 70 and y < 36 and index.data(Qt.ItemDataRole.UserRole + 5):
+                row = index.row()
+                self.blockSignals(True)
+                super().mouseReleaseEvent(event)
+                self.blockSignals(False)
+                self.set_action.emit(row)
+                return
+        super().mouseReleaseEvent(event)
+
     def move_page(self, source, destination):
         if source >= 0 and source != destination:
             item = self.takeItem(source)
             self.insertItem(destination, item)
             self.setCurrentItem(item)
             self.doItemsLayout()
+            self.order_changed.emit()
 
     def dropEvent(self, event):
         if event.source() is not self:
@@ -35,7 +88,9 @@ class MergeView(QWidget):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Click to select pages. Drag thumbnails into output order."))
+        self.controls = QWidget()
+        self.controls_layout = QVBoxLayout(self.controls)
+        self.controls_layout.setContentsMargins(0, 0, 0, 0)
         zoom = QHBoxLayout()
         zoom.addWidget(QLabel("Page size"))
         self.zoom = QSlider(Qt.Orientation.Horizontal)
@@ -45,13 +100,20 @@ class MergeView(QWidget):
         self.zoom_label = QLabel("260 px")
         zoom.addWidget(self.zoom, 1)
         zoom.addWidget(self.zoom_label)
-        layout.addLayout(zoom)
+        self.controls_layout.addLayout(zoom)
         self.render_timer = QTimer(self)
         self.render_timer.setSingleShot(True)
         self.render_timer.timeout.connect(self.render_thumbnails)
         self.source_paths = []
         self.password = ""
         self.pages = PageGrid()
+        self.pages.setItemDelegate(PageActions(self.pages))
+        self.pages.order_changed.connect(self.update_sets)
+        self.pages.delete_page.connect(self.delete_page)
+        self.pages.crop_page.connect(self.crop_page)
+        self.pages.set_action.connect(self.toggle_set)
+        self.crops = {}
+        self.collapsed = set()
         self.pages.setViewMode(QListWidget.ViewMode.IconMode)
         self.pages.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.pages.setIconSize(QSize(260, 360))
@@ -72,7 +134,57 @@ class MergeView(QWidget):
             action = QPushButton(title)
             action.clicked.connect(lambda unused=False, value=checked: self.select_all(value))
             controls.addWidget(action)
-        layout.addLayout(controls)
+        move = QPushButton("Move page to…")
+        move.clicked.connect(self.move_to_position)
+        controls.addWidget(move)
+        self.controls_layout.addLayout(controls)
+
+    def update_sets(self):
+        colors = ["#a5d6b1", "#acc8f0", "#e5c4a1", "#d0b5e8", "#a7dcd9"]
+        for group, path in enumerate(self.source_paths):
+            items = [self.pages.item(i) for i in range(self.pages.count()) if self.pages.item(i).data(Qt.ItemDataRole.UserRole)[0] == str(path)]
+            for position, item in enumerate(items):
+                item.setData(Qt.ItemDataRole.UserRole + 4, colors[group % len(colors)])
+                marker = f"▶ {group + 1}" if position == 0 else f"{group + 1} ◀" if position == len(items) - 1 else ""
+                item.setData(Qt.ItemDataRole.UserRole + 5, marker)
+                item.setHidden(str(path) in self.collapsed and position != 0)
+        self.pages.viewport().update()
+
+    def toggle_set(self, row):
+        item = self.pages.item(row)
+        path = item.data(Qt.ItemDataRole.UserRole)[0]
+        items = [self.pages.item(i) for i in range(self.pages.count()) if self.pages.item(i).data(Qt.ItemDataRole.UserRole)[0] == path]
+        if path in self.collapsed or item is items[0]:
+            self.collapsed.discard(path)
+        else:
+            self.collapsed.add(path)
+        self.update_sets()
+
+    def delete_page(self, row):
+        self.pages.takeItem(row)
+        self.update_sets()
+
+    def crop_page(self, row):
+        item = self.pages.item(row)
+        key = item.data(Qt.ItemDataRole.UserRole)
+        with open_document(Path(key[0]), self.password) as document:
+            page = document[key[1]]
+            if key in self.crops:
+                page.set_cropbox(pdf.Rect(self.crops[key]))
+            dialog = CropPageDialog(page, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            self.crops[key] = dialog.cropbox()
+        self.render_thumbnails()
+
+    def move_to_position(self):
+        row = self.pages.currentRow()
+        if row < 0:
+            return
+        position, accepted = QInputDialog.getInt(self, "Move page", "New document position", row + 1, 1, self.pages.count())
+        if accepted:
+            self.pages.move_page(row, position - 1)
+            self.update_sets()
 
     def add_page(self):
         dialog = AddPageDialog(self)
@@ -114,7 +226,11 @@ class MergeView(QWidget):
             try:
                 with open_document(path, self.password) as document:
                     for item in items:
-                        item.setIcon(self.page_icon(document[item.data(Qt.ItemDataRole.UserRole)[1]]))
+                        key = item.data(Qt.ItemDataRole.UserRole)
+                        page = document[key[1]]
+                        if key in self.crops:
+                            page.set_cropbox(pdf.Rect(self.crops[key]))
+                        item.setIcon(self.page_icon(page))
             except Exception as error:
                 for item in items:
                     item.setToolTip(str(error))
@@ -154,6 +270,7 @@ class MergeView(QWidget):
             for item in items:
                 self.pages.addItem(item)
             self.loaded.add(str(path))
+        self.update_sets()
         if errors:
             raise ValueError("\n".join(errors))
 

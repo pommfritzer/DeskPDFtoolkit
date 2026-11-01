@@ -127,9 +127,14 @@ def _process(tool, paths, target, options):
                 except ToolError as error:
                     raise ToolError(f"{path.name}: {error}") from None
 
+            crops = options.get("merge_crops", [None] * len(paths))
+            if crops[0] is not None:
+                document[parse_pages(selections[0], len(document))[0]].set_cropbox(pdf.Rect(crops[0]))
             select_source_pages(document, selections[0], paths[0])
-            for path, expression in zip(paths[1:], selections[1:]):
+            for source_index, (path, expression) in enumerate(zip(paths[1:], selections[1:]), 1):
                 with open_document(path, password) as source:
+                    if crops[source_index] is not None:
+                        source[parse_pages(expression, len(source))[0]].set_cropbox(pdf.Rect(crops[source_index]))
                     select_source_pages(source, expression, path)
                     document.insert_pdf(source)
         elif tool in {"extract", "reorder"}:

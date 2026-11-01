@@ -75,7 +75,7 @@ def test_top_navigation_and_motion_control():
     window = Window()
     window.show()
     app.processEvents()
-    assert window.topbar.height() == round(max(120, window.height() // 6) * .7)
+    assert window.topbar.height() == round(window.height() * .22)
     assert window.topbar.width() == window.width()
     assert window.topbar.x() == 0
     assert not hasattr(window, "nav_buttons")
