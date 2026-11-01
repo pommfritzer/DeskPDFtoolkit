@@ -3,8 +3,8 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "deskpdf-toolkit"
-version = "0.2.1"
+name = "pdftoolkit26"
+version = "0.3.0"
 description = "A quiet, local-first PDF workbench for Windows"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
@@ -18,7 +18,7 @@ Repository = "https://github.com/pommfritzer/DeskPDFtoolkit"
 Issues = "https://github.com/pommfritzer/DeskPDFtoolkit/issues"
 
 [project.gui-scripts]
-deskpdf = "deskpdf.app:main"
+pdftoolkit26 = "deskpdf.app:main"
 
 [tool.setuptools.package-data]
 deskpdf = ["assets/*"]

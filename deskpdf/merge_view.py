@@ -1,11 +1,14 @@
 from pathlib import Path
+import tempfile
+import uuid
 
 import pymupdf as pdf
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QSlider, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QSlider, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from deskpdf.engine import open_document
+from deskpdf.add_page import AddPageDialog
 
 
 class PageGrid(QListWidget):
@@ -26,6 +29,8 @@ class PageGrid(QListWidget):
 
 
 class MergeView(QWidget):
+    page_created = Signal(str)
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -56,14 +61,32 @@ class MergeView(QWidget):
         self.pages.setMovement(QListWidget.Movement.Snap)
         self.pages.setGridSize(QSize(300, 425))
         self.loaded = set()
+        self.generated_pages = tempfile.TemporaryDirectory(prefix="pdftoolkit26-pages-")
         self.zoom.valueChanged.connect(self.resize_thumbnails)
         layout.addWidget(self.pages)
         controls = QHBoxLayout()
+        add = QPushButton("+ Add page")
+        add.clicked.connect(self.add_page)
+        controls.addWidget(add)
         for title, checked in (("Select all", True), ("Clear selection", False)):
             action = QPushButton(title)
             action.clicked.connect(lambda unused=False, value=checked: self.select_all(value))
             controls.addWidget(action)
         layout.addLayout(controls)
+
+    def add_page(self):
+        dialog = AddPageDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        path = Path(self.generated_pages.name) / f"Title page-{uuid.uuid4().hex[:6]}.pdf"
+        with dialog.document() as document:
+            document.save(path)
+        self.page_created.emit(str(path))
+        for index in range(self.pages.count()):
+            item = self.pages.item(index)
+            if item.data(Qt.ItemDataRole.UserRole)[0] == str(path):
+                item.setCheckState(Qt.CheckState.Checked)
+                self.pages.scrollToItem(item)
 
     def resize_thumbnails(self, width):
         self.pages.setIconSize(QSize(width, int(width * 1.4)))

@@ -9,5 +9,5 @@ a = Analysis(
     excludes=["PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtNetwork", "tkinter"],
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="DeskPDF", console=False, icon=str(root / "deskpdf/assets/icon.ico"))
-coll = COLLECT(exe, a.binaries, a.datas, name="DeskPDF")
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PDFtoolkit26", console=False, icon=str(root / "deskpdf/assets/icon.ico"))
+coll = COLLECT(exe, a.binaries, a.datas, name="PDFtoolkit26")

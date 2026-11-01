@@ -111,7 +111,7 @@ class Preview(QLabel):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DeskPDF — Your PDFs, at hand")
+        self.setWindowTitle("PDFtoolkit26 — Your PDFs, at hand")
         self.setWindowIcon(QIcon(str(ASSETS / "icon.ico")))
         self.resize(1210, 830)
         self.setMinimumSize(960, 680)
@@ -130,7 +130,7 @@ class Window(QMainWindow):
         navigation = QVBoxLayout(self.topbar)
         navigation.setContentsMargins(30, 10, 30, 10)
         top = QHBoxLayout()
-        top.addWidget(button("DeskPDF", lambda: self.show_catalog(), "brand"))
+        top.addWidget(button("PDFtoolkit26", lambda: self.show_catalog(), "brand"))
         top.addWidget(label("LOCAL PDF STUDIO", "eyebrow"))
         self.active_title = label("Choose a tool", "muted")
         top.addWidget(self.active_title)
@@ -142,6 +142,9 @@ class Window(QMainWindow):
         self.search.textChanged.connect(self.search_tools)
         top.addWidget(self.search)
         settings = button("Settings", self.show_settings)
+        self.add_page_action = button("+ Add page", self.add_editor_page)
+        self.add_page_action.hide()
+        top.addWidget(self.add_page_action)
         top.addWidget(settings)
         navigation.addLayout(top)
         shell.addWidget(self.topbar)
@@ -153,6 +156,14 @@ class Window(QMainWindow):
         self.show_catalog()
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.choose_files)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
+
+    def add_editor_page(self):
+        if self.worker and self.worker.isRunning():
+            return
+        if not self.current_tool or self.current_tool.id != "merge":
+            self.select_tool(TOOL_BY_ID["merge"])
+            self.visual_merge.select_all(True)
+        self.visual_merge.add_page()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -171,7 +182,7 @@ class Window(QMainWindow):
         motion.setCheckable(True)
         motion.setChecked(self.centralWidget().timer.isActive())
         motion.triggered.connect(lambda checked: self.centralWidget().timer.start() if checked else self.centralWidget().timer.stop())
-        menu.addAction("About DeskPDF", self.about)
+        menu.addAction("About PDFtoolkit26", self.about)
         menu.exec(self.cursor().pos())
 
     def build_catalog(self):
@@ -192,6 +203,7 @@ class Window(QMainWindow):
     def show_catalog(self, group="All tools"):
         if self.worker and self.worker.isRunning():
             return
+        self.add_page_action.hide()
         self.group = group
         self.active_title.setText("Choose a tool")
         self.stack.setCurrentIndex(0)
@@ -272,6 +284,7 @@ class Window(QMainWindow):
         self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         left.addWidget(self.form_widget)
         self.visual_merge = MergeView()
+        self.visual_merge.page_created.connect(lambda path: self.add_paths([path]))
         self.no_options = label("Ready when you are. This tool needs no extra settings.", "muted")
         left.addWidget(self.no_options)
         left.addStretch()
@@ -318,6 +331,7 @@ class Window(QMainWindow):
         self.stack.addWidget(self.workbench)
 
     def select_tool(self, tool):
+        self.add_page_action.show()
         self.current_tool = tool
         self.title.setText(tool.title)
         self.active_title.setText(tool.title)
@@ -471,8 +485,14 @@ class Window(QMainWindow):
             return
         extension = self.current_tool.extension
         default = self.paths[0].with_name(f"{self.paths[0].stem}-{self.current_tool.id}.{extension}")
+        temporary_pages = Path(self.visual_merge.generated_pages.name).resolve()
+        if default.resolve().is_relative_to(temporary_pages):
+            default = Path.home() / "Documents" / f"New document.{extension}"
         output, _ = QFileDialog.getSaveFileName(self, "Save a new file", str(default), f"{extension.upper()} file (*.{extension})")
         if not output:
+            return
+        if Path(output).resolve().is_relative_to(temporary_pages):
+            self.status.setText("Choose a permanent folder, such as Documents, for your saved file.")
             return
         if Path(output).resolve() in [path.resolve() for path in self.paths]:
             self.status.setText("Save to a new file to keep every original safe.")
@@ -518,7 +538,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.2.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.3.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
@@ -539,13 +559,13 @@ class Window(QMainWindow):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="DeskPDF local PDF workbench")
+    parser = argparse.ArgumentParser(description="PDFtoolkit26 local PDF workbench")
     parser.add_argument("--tool", choices=list(TOOL_BY_ID), default=None)
     parser.add_argument("files", nargs="*")
     arguments = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("DeskPDF")
-    app.setOrganizationName("DeskPDF")
+    app.setApplicationName("PDFtoolkit26")
+    app.setOrganizationName("PDFtoolkit26")
     app.setStyle("Fusion")
     app.setStyleSheet(STYLE)
     window = Window()

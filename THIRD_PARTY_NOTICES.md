@@ -1,6 +1,6 @@
 # Third-party notices
 
-DeskPDF is distributed under AGPL-3.0-or-later. Its source is available at https://github.com/pommfritzer/DeskPDFtoolkit. No Smallpdf code, branding, or artwork is included.
+PDFtoolkit26 is distributed under AGPL-3.0-or-later. Its source is available at https://github.com/pommfritzer/DeskPDFtoolkit. No Smallpdf code, branding, or artwork is included.
 
 The application bundles the following open-source components. Original package license and notice files are copied to `licenses/` in application distributions by `scripts/collect_licenses.py`.
 

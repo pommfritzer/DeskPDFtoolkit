@@ -60,3 +60,5 @@ QSlider::handle:horizontal { background: #d1ecd8; width: 16px; margin: -6px 0; b
 """
 
 STYLE += "QPushButton#brand { background: transparent; border: 0; padding: 0; font-size: 24px; font-weight: 700; color: #edfff4; }"
+
+STYLE += "QDialog { background: #123a31; } QToolButton { background: #214a3b; color: #e8f3ec; border: 1px solid #658775; border-radius: 6px; padding: 8px 16px; } QToolButton:checked { background: #bee2c5; color: #143a2a; }"

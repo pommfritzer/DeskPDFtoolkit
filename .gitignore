@@ -6,5 +6,5 @@ build/
 dist/
 releases/
 *.spec
-!DeskPDF.spec
+!PDFtoolkit26.spec
 .tools/

@@ -31,3 +31,7 @@ The merge view was rendered and inspected. The Windows bundle passed its startup
 All 34 tests pass. The merge UI test loads both PDFs together, clicks pages from both sources, uses the same move operation as thumbnail dropping, switches source selection without resetting the grid, exports the actual PDF, and checks its text order. Removing an input prunes its thumbnails; select-all and clear apply across remaining pages.
 
 The combined view was rendered and inspected. The installer upgrades one fixed per-user installation, cleans obsolete runtime files, disables automatic duplicate relaunches, and removes deselected integration entries. Reinstall checks verified Explorer integration both disabled and enabled, and one Windows uninstall entry for DeskPDF 0.1.2.
+
+## PDFtoolkit26 0.3.0
+
+All 49 tests pass. Twelve combinations verify exact horizontal and vertical centering across Sans, Serif, Mono, bold and italic. Additional tests cover blank pages and adding a generated title page into the selected editor sequence. The composer was rendered and visually inspected. Product executables, installer, shortcuts and Explorer menu entries use PDFtoolkit26; the installer removes the legacy DeskPDF installation before migration.

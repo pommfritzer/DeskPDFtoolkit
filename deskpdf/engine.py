@@ -54,7 +54,7 @@ def executable(name: str, candidates: list[str]) -> str:
     for candidate in candidates:
         if Path(candidate).is_file():
             return candidate
-    raise ToolError(f"Install {name} locally and restart DeskPDF to use this tool.")
+    raise ToolError(f"Install {name} locally and restart PDFtoolkit26 to use this tool.")
 
 
 def numeric(options, name, default, minimum, maximum):

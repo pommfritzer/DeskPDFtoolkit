@@ -1,18 +1,18 @@
-# DeskPDF
+# PDFtoolkit26
 
 **Your PDFs, at hand.** A quiet, local-first PDF workbench for Windows.
 
 Version 0.2 introduces a full-width single-row toolbar without category buttons, an animated green ambient background with a grey dot grid, and a gallery led by large vector tool icons. Use Settings to pause background animation. In Merge PDF, the Page size slider enlarges thumbnails from 140 to 650 pixels and re-renders pages sharply without changing your selection or order.
 
-![DeskPDF tool library](docs/screenshots/library.png)
+![PDFtoolkit26 tool library](docs/screenshots/library.png)
 
-DeskPDF brings common PDF jobs into one native desktop app: choose a tool, add a file, save a copy. Documents are processed on your computer. No account, telemetry, server, or upload service.
+PDFtoolkit26 brings common PDF jobs into one native desktop app: choose a tool, add a file, save a copy. Documents are processed on your computer. No account, telemetry, server, or upload service.
 
 ## Install
 
-Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `DeskPDF-0.2.1-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
+Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.3.0-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
 
-The optional Explorer integration adds **Open in DeskPDF**, **Compress with DeskPDF**, and **Extract pages with DeskPDF** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
+The optional Explorer integration adds **Open in PDFtoolkit26**, **Compress with PDFtoolkit26**, and **Extract pages with PDFtoolkit26** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
 
 Target: Windows 10/11, x64. The initial build is unsigned; Windows may show an unknown-publisher notice. Signing is a release-maintainer task.
 
@@ -30,7 +30,7 @@ Page selections accept `all`, `1,3-5`, descending ranges such as `5-1`, and dupl
 
 For merging, all pages from every added PDF appear together in one thumbnail grid. Click thumbnails to include or exclude pages; drag the thumbnails directly into output order. Select all and Clear selection apply across the whole grid. Each thumbnail identifies its source PDF and page number.
 
-![DeskPDF workbench](docs/screenshots/workbench.png)
+![PDFtoolkit26 workbench](docs/screenshots/workbench.png)
 
 ### Honest boundaries
 
@@ -72,9 +72,9 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then:
 .\scripts\build.ps1
 ```
 
-To upgrade the local installation and open Merge PDF, run `./scripts/install.ps1` from the project folder. It uses the project version's installer, retains installer task preferences, closes the previous app through the installer, and launches once afterward. Installation stays in `%LOCALAPPDATA%\Programs\DeskPDF`; reinstalling updates the same Windows uninstall entry. Disabling Explorer integration or the desktop shortcut during setup removes those entries.
+To upgrade the local installation and open Merge PDF, run `./scripts/install.ps1` from the project folder. It uses the project version's installer, retains installer task preferences, closes the previous app through the installer, and launches once afterward. Installation stays in `%LOCALAPPDATA%\Programs\PDFtoolkit26`; reinstalling updates the same Windows uninstall entry. Disabling Explorer integration or the desktop shortcut during setup removes those entries.
 
-The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/DeskPDF-0.2.1-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/DeskPDF`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.2.1` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
+The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.3.0-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.3.0` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
 
 ## Architecture
 
@@ -82,7 +82,7 @@ The script regenerates the icon, runs tests, collects dependency licenses, bundl
 - `deskpdf/engine.py`: PDF operations, validation and atomic output saving; no GUI dependencies.
 - `deskpdf/app.py`: Qt widgets, file selection, preview and background jobs.
 - `deskpdf/theme.py`: centralized visual styling.
-- `installer/DeskPDF.iss`: per-user installer and removable Explorer commands.
+- `installer/PDFtoolkit26.iss`: per-user installer and removable Explorer commands.
 - `tests/`: generated documents verify content, page order, redaction, encryption, form values, exports, and failure behavior.
 
 The app uses Python and PySide6 for legible, direct native UI code; MuPDF handles PDF rendering and manipulation. Work runs on a background thread while controls are locked against competing edits. Files are staged beside the destination, then atomically replaced only after successful processing. Input paths cannot be output paths.
@@ -91,4 +91,6 @@ See [design decisions](docs/DESIGN.md), [contributing](CONTRIBUTING.md), and [th
 
 ## License
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE). DeskPDF has its own branding and implementation; it is not affiliated with Smallpdf.
+AGPL-3.0-or-later. See [LICENSE](LICENSE). PDFtoolkit26 has its own branding and implementation; it is not affiliated with Smallpdf.
+
+Use **Add page** in the editor to create an A4 title or divider page. The live composer centers your text and offers Sans, Serif, Mono, size, bold and italic. New pages are included automatically and can be dragged into place. Generated pages stay in a temporary workspace until the app closes; save your finished PDF before quitting.
