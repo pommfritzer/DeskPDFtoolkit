@@ -35,7 +35,7 @@ STYLE += """
 * { color: #e1eee7; }
 QMainWindow { background: #123a31; }
 QWidget#catalog { background: transparent; }
-QFrame#topbar { background: rgba(9, 30, 29, 215); border-bottom: 1px solid #4c7566; border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; }
+QFrame#topbar { background: rgba(9, 30, 29, 215); border-bottom: 1px solid #4c7566; border-radius: 0; }
 QLabel#brand { color: #edfff4; font-size: 24px; }
 QLabel#eyebrow, QLabel#muted { color: #b5c9bf; }
 QLabel#status { color: #c8f2d3; }
@@ -58,3 +58,5 @@ QMenu::item:selected { background: #3e7256; }
 QSlider::groove:horizontal { height: 5px; background: #50725e; border-radius: 2px; }
 QSlider::handle:horizontal { background: #d1ecd8; width: 16px; margin: -6px 0; border-radius: 8px; }
 """
+
+STYLE += "QPushButton#brand { background: transparent; border: 0; padding: 0; font-size: 24px; font-weight: 700; color: #edfff4; }"

@@ -2,7 +2,7 @@
 
 ## 0.2 visual direction
 
-The current interface uses one top navigation band occupying one sixth of the window height. Branding, tool categories, search, the active tool name and Settings live together there. The main gallery uses large vector tool icons with short labels. The old sidebar and large promotional headline have been removed.
+The current interface uses one full-width top navigation band, 30% shorter than the original one-sixth-height band. Branding, search, the active tool name and Settings live in a single row. Category buttons have been removed. Clicking the DeskPDF brand returns to all tools. The main gallery uses large vector tool icons with short labels. The old sidebar and large promotional headline have been removed.
 
 The background is a locally drawn dark green gradient with slowly moving translucent ribbons and a fixed grey dot grid. It uses Qt painting and a bounded timer, without video assets or network resources. Painting pauses while minimized; Settings can pause animation entirely. Dark translucent surfaces and light text preserve contrast over the moving background.
 

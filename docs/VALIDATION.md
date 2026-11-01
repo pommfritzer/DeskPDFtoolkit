@@ -1,5 +1,9 @@
 # Initial release validation
 
+## 0.2.1 compact toolbar
+
+All 35 tests pass. The navigation test checks the 30% height reduction, full window width, zero horizontal offset, and removal of category buttons. Updated gallery and workbench renders were inspected before packaging.
+
 ## 0.2.0 interface overhaul
 
 All 35 tests pass, including preservation of selected page order across thumbnail enlargement, sharper re-rendered icons, top navigation height, and background animation control. The gallery and workbenches were rendered and inspected at normal and minimum window sizes. The build checks the packaged application's imports and workbench startup before compiling the installer.

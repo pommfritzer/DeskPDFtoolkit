@@ -125,13 +125,15 @@ class Window(QMainWindow):
         root = AmbientBackground()
         self.setCentralWidget(root)
         shell = QVBoxLayout(root)
-        shell.setContentsMargins(24, 0, 24, 12)
+        shell.setContentsMargins(0, 0, 0, 0)
         self.topbar = QFrame(objectName="topbar")
         navigation = QVBoxLayout(self.topbar)
-        navigation.setContentsMargins(18, 12, 18, 10)
+        navigation.setContentsMargins(30, 10, 30, 10)
         top = QHBoxLayout()
-        top.addWidget(label("DeskPDF", "brand"))
+        top.addWidget(button("DeskPDF", lambda: self.show_catalog(), "brand"))
         top.addWidget(label("LOCAL PDF STUDIO", "eyebrow"))
+        self.active_title = label("Choose a tool", "muted")
+        top.addWidget(self.active_title)
         top.addStretch()
         self.search = QLineEdit()
         self.search.setPlaceholderText("Find a tool…  Ctrl+K")
@@ -142,19 +144,9 @@ class Window(QMainWindow):
         settings = button("Settings", self.show_settings)
         top.addWidget(settings)
         navigation.addLayout(top)
-        categories = QHBoxLayout()
-        self.nav_buttons = {}
-        for group in ["All tools", "Organize", "Optimize", "Convert", "Edit & sign", "Security"]:
-            item = button(group, lambda checked=False, value=group: self.show_catalog(value), "nav")
-            item.setCheckable(True)
-            self.nav_buttons[group] = item
-            categories.addWidget(item)
-        categories.addStretch()
-        self.active_title = label("Choose a tool", "muted")
-        categories.addWidget(self.active_title)
-        navigation.addLayout(categories)
         shell.addWidget(self.topbar)
         self.stack = QStackedWidget()
+        self.stack.setContentsMargins(24, 0, 24, 12)
         shell.addWidget(self.stack, 1)
         self.build_catalog()
         self.build_workbench()
@@ -165,7 +157,7 @@ class Window(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "topbar"):
-            self.topbar.setFixedHeight(max(120, self.height() // 6))
+            self.topbar.setFixedHeight(round(max(120, self.height() // 6) * .7))
 
     def search_tools(self):
         if hasattr(self, "cards"):
@@ -201,8 +193,7 @@ class Window(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
         self.group = group
-        for name, item in self.nav_buttons.items():
-            item.setChecked(name == group)
+        self.active_title.setText("Choose a tool")
         self.stack.setCurrentIndex(0)
         self.filter_catalog()
 
@@ -527,7 +518,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.2.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About DeskPDF", "DeskPDF 0.2.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
