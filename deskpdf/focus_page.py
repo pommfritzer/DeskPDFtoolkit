@@ -1,83 +1,109 @@
+import copy
 from pathlib import Path
 
 import pymupdf as pdf
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QImage, QKeySequence, QPainter, QPixmap, QShortcut
-from PySide6.QtWidgets import QCheckBox, QDialog, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QCheckBox, QPushButton
 
+from deskpdf.editor import VisualEditor
 from deskpdf.engine import open_document
 
 
-class PageFocus(QDialog):
+class PageFocus(VisualEditor):
     def __init__(self, workspace, row, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("PDFtoolkit26 · Page focus")
         self.workspace = workspace
         self.row = row
-        layout = QVBoxLayout(self)
-        top = QHBoxLayout()
-        self.caption = QLabel()
-        top.addWidget(self.caption, 1)
+        path, number = workspace.pages.item(row).data(Qt.ItemDataRole.UserRole)
+        super().__init__(Path(path), workspace.password, parent)
+        self.setWindowTitle("PDFtoolkit26 · Focus editor")
+        self.previous = QPushButton("❮")
+        self.next = QPushButton("❯")
+        self.previous.setFixedWidth(48)
+        self.next.setFixedWidth(48)
+        self.previous.clicked.connect(lambda: self.navigate(-1))
+        self.next.clicked.connect(lambda: self.navigate(1))
+        body = self.layout().itemAt(2).layout()
+        body.insertWidget(0, self.previous)
+        body.addWidget(self.next)
         self.included = QCheckBox("Include page")
         self.included.toggled.connect(self.set_included)
-        top.addWidget(self.included)
-        close = QPushButton("Back to pages · Esc")
-        close.clicked.connect(self.reject)
-        top.addWidget(close)
-        layout.addLayout(top)
-        body = QHBoxLayout()
-        self.previous = QPushButton("❮")
-        self.previous.setAccessibleName("Previous page")
-        self.previous.setFixedWidth(56)
-        self.previous.clicked.connect(lambda: self.navigate(-1))
-        self.next = QPushButton("❯")
-        self.next.setAccessibleName("Next page")
-        self.next.setFixedWidth(56)
-        self.next.clicked.connect(lambda: self.navigate(1))
-        self.scene = QGraphicsScene(self)
-        self.view = QGraphicsView(self.scene)
-        self.view.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        body.addWidget(self.previous)
-        body.addWidget(self.view, 1)
-        body.addWidget(self.next)
-        layout.addLayout(body, 1)
-        for key, action in (("Left", lambda: self.navigate(-1)), ("Right", lambda: self.navigate(1)), ("Ctrl++", lambda: self.view.scale(1.2, 1.2)), ("Ctrl+-", lambda: self.view.scale(1 / 1.2, 1 / 1.2))):
-            QShortcut(QKeySequence(key), self, activated=action)
-        self.render()
+        self.layout().itemAt(0).layout().addWidget(self.included)
+        back = QPushButton("Back · Esc")
+        back.clicked.connect(self.reject)
+        self.layout().itemAt(0).layout().addWidget(back)
+        toolbar = self.layout().itemAt(0).layout()
+        for unused in range(2):
+            toolbar.takeAt(0).widget().deleteLater()
+        for key, offset in (("Left", -1), ("Right", 1)):
+            shortcut = QShortcut(QKeySequence(key), self.view)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            shortcut.activated.connect(lambda delta=offset: self.navigate(delta))
+        self.load_page()
 
     def set_included(self, checked):
         self.workspace.pages.item(self.row).setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
 
-    def navigate(self, offset):
-        self.row = max(0, min(self.workspace.pages.count() - 1, self.row + offset))
-        self.render()
+    def store(self):
+        if self.document.is_closed:
+            return
+        self.capture()
+        key = self.workspace.pages.item(self.row).data(Qt.ItemDataRole.UserRole)
+        self.workspace.edits[key] = copy.deepcopy(self.objects.get(self.page, []))
+        self.workspace.crops[key] = tuple(self.document[self.page].cropbox)
+        if self.dirty:
+            self.workspace.edits_dirty = True
+            self.set_included(True)
+        self.dirty = False
 
-    def render(self):
-        item = self.workspace.pages.item(self.row)
-        path, number = item.data(Qt.ItemDataRole.UserRole)
-        with open_document(Path(path), self.workspace.password) as document:
-            page = document[number]
-            crop = self.workspace.crops.get((path, number))
-            if crop:
-                page.set_cropbox(pdf.Rect(crop))
-            pix = page.get_pixmap(matrix=pdf.Matrix(2, 2), alpha=False)
-            image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888).copy()
-        self.scene.clear()
-        self.scene.addPixmap(QPixmap.fromImage(image))
-        self.scene.setSceneRect(0, 0, pix.width, pix.height)
-        self.caption.setText(f"{Path(path).name} · Page {number + 1} · {self.row + 1}/{self.workspace.pages.count()}")
-        self.included.blockSignals(True)
-        self.included.setChecked(item.checkState() == Qt.CheckState.Checked)
-        self.included.blockSignals(False)
+    def load_page(self):
+        path, number = self.workspace.pages.item(self.row).data(Qt.ItemDataRole.UserRole)
+        if not self.document.is_closed:
+            self.document.close()
+        self.document = open_document(Path(path), self.workspace.password)
+        self.path = Path(path)
+        self.page = number
+        key = (path, number)
+        if key in self.workspace.crops:
+            self.document[number].set_cropbox(pdf.Rect(self.workspace.crops[key]))
+        self.objects = {number: copy.deepcopy(self.workspace.edits.get(key, []))}
+        self.history.clear()
+        self.future.clear()
+        self.dirty = False
+        self.render()
         self.previous.setEnabled(self.row > 0)
         self.next.setEnabled(self.row + 1 < self.workspace.pages.count())
-        QTimer.singleShot(0, self.fit)
+        self.included.blockSignals(True)
+        self.included.setChecked(self.workspace.pages.item(self.row).checkState() == Qt.CheckState.Checked)
+        self.included.blockSignals(False)
 
-    def fit(self):
-        self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+    def navigate(self, offset):
+        self.store()
+        self.row = max(0, min(self.workspace.pages.count() - 1, self.row + offset))
+        self.load_page()
+
+    def save(self):
+        self.store()
+        self.workspace.save_requested.emit()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "view"):
-            self.fit()
+            QTimer.singleShot(0, self.fit)
+
+    def fit(self):
+        self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def finish(self):
+        self.store()
+        self.workspace.render_thumbnails()
+        if not self.document.is_closed:
+            self.document.close()
+
+    def reject(self):
+        self.finish()
+        super().reject()
+
+    def closeEvent(self, event):
+        self.finish()
+        event.accept()

@@ -358,8 +358,8 @@ class Window(QMainWindow):
         self.password_button.setFixedWidth(46)
         self.password_button.setToolTip("Unlock a password-protected input PDF")
         self.password_button.setAccessibleName("Input PDF password")
-        left.addWidget(self.password_button)
-        left.addWidget(self.password_panel)
+
+
         self.password.returnPressed.connect(self.confirm_input_password)
         left.addSpacing(4)
         self.settings_title = label("Options", "eyebrow")
@@ -370,6 +370,7 @@ class Window(QMainWindow):
         self.form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         left.addWidget(self.form_widget)
         self.visual_merge = MergeView()
+        self.visual_merge.save_requested.connect(self.start_job)
         self.visual_merge.page_created.connect(lambda path: self.add_paths([path]))
         self.no_options = label("Ready when you are. This tool needs no extra settings.", "muted")
         self.no_options.hide()
@@ -413,11 +414,14 @@ class Window(QMainWindow):
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.topbar.layout().addWidget(self.status)
         footer = QHBoxLayout()
+        footer.addWidget(self.visual_merge.page_tools)
         footer.addStretch()
         self.open_result = button("Open result ↗", self.open_output)
         self.open_result.hide()
         self.topbar.layout().addWidget(self.open_result)
         self.save = button("Save a copy…", self.start_job, "primary")
+        footer.addWidget(self.password_panel)
+        footer.addWidget(self.password_button)
         footer.addWidget(self.save)
         layout.addLayout(footer)
         self.stack.addWidget(self.workbench)
@@ -428,6 +432,7 @@ class Window(QMainWindow):
         self.description.hide()
         self.set_partition_default(.40)
         self.visual_merge.controls.setVisible(tool.id == "merge")
+        self.visual_merge.page_tools.setVisible(tool.id == "merge")
         self.current_tool = tool
         self.title.setText(tool.title)
         self.active_title.setText(tool.title)
@@ -605,6 +610,8 @@ class Window(QMainWindow):
             job_paths = [Path(path) for path, page in selected]
             options["merge_pages"] = [str(page + 1) for path, page in selected]
             options["merge_crops"] = [self.visual_merge.crops.get((path, page)) for path, page in selected]
+            import copy
+            options["merge_edits"] = [copy.deepcopy(self.visual_merge.edits.get((path, page), [])) for path, page in selected]
         self.worker = Worker(self.current_tool.id, job_paths, Path(output), options)
         self.worker.completed.connect(self.job_done)
         self.worker.failed.connect(self.job_failed)
@@ -615,6 +622,8 @@ class Window(QMainWindow):
         self.worker.start()
 
     def job_done(self, output):
+        if self.current_tool.id == "merge":
+            self.visual_merge.edits_dirty = False
         self.last_output = Path(output)
         self.status.setText(f"Saved {self.last_output.name}  ·  {self.last_output.stat().st_size / 1024:,.0f} KB")
         self.open_result.show()
@@ -635,7 +644,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.3\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
@@ -652,6 +661,9 @@ class Window(QMainWindow):
             self.status.setText("Please wait for the current operation to finish before closing.")
             event.ignore()
         else:
+            if self.visual_merge.edits_dirty and QMessageBox.question(self, "Unsaved page edits", "Discard unsaved page edits?", QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Discard:
+                event.ignore()
+                return
             event.accept()
 
 

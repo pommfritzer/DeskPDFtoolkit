@@ -1,5 +1,9 @@
 # Initial release validation
 
+## 0.6.0 integrated focus editing
+
+All 59 tests pass. The new end-to-end focus test adds and moves text and a picture, crops edges through the crop overlay, navigates between pages, preserves objects on return, and exports the main merged PDF with text, image, crop and vector shapes intact. The original PDF is checked for unchanged content. Updated workspace and focus views were rendered and inspected against the user's layout markup. PDF object application/export is shared by standalone editing, focus previews and merged output.
+
 ## 0.5.3 resizable toolbar and page focus
 
 All 58 tests pass. New tests verify manual toolbar sizing survives window resizing, focus navigation boundaries, cropped focus rendering, and selection synchronisation with the thumbnail workspace. The compact toolbar and focused page view were rendered and visually inspected.

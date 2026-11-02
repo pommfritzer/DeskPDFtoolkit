@@ -87,6 +87,7 @@ class PageGrid(QListWidget):
 
 class MergeView(QWidget):
     page_created = Signal(str)
+    save_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -96,14 +97,21 @@ class MergeView(QWidget):
         self.controls_layout = QVBoxLayout(self.controls)
         self.controls_layout.setContentsMargins(0, 0, 0, 0)
         zoom = QHBoxLayout()
-        zoom.addWidget(QLabel("Page size"))
+        zoom.addStretch()
         self.zoom = QSlider(Qt.Orientation.Horizontal)
         self.zoom.setRange(140, 650)
         self.zoom.setValue(260)
-        self.zoom.setAccessibleName("Thumbnail size")
-        self.zoom_label = QLabel("260 px")
-        zoom.addWidget(self.zoom, 1)
+        self.zoom.hide()
+        minus = QPushButton("−")
+        plus = QPushButton("+")
+        minus.setFixedWidth(36)
+        plus.setFixedWidth(36)
+        minus.clicked.connect(lambda: self.zoom.setValue(self.zoom.value() - 26))
+        plus.clicked.connect(lambda: self.zoom.setValue(self.zoom.value() + 26))
+        self.zoom_label = QLabel("100%")
+        zoom.addWidget(minus)
         zoom.addWidget(self.zoom_label)
+        zoom.addWidget(plus)
         self.controls_layout.addLayout(zoom)
         self.render_timer = QTimer(self)
         self.render_timer.setSingleShot(True)
@@ -118,6 +126,8 @@ class MergeView(QWidget):
         self.pages.focus_page.connect(self.focus_page)
         self.pages.set_action.connect(self.toggle_set)
         self.crops = {}
+        self.edits = {}
+        self.edits_dirty = False
         self.collapsed = set()
         self.pages.setViewMode(QListWidget.ViewMode.IconMode)
         self.pages.setResizeMode(QListWidget.ResizeMode.Adjust)
@@ -131,7 +141,9 @@ class MergeView(QWidget):
         self.generated_pages = tempfile.TemporaryDirectory(prefix="pdftoolkit26-pages-")
         self.zoom.valueChanged.connect(self.resize_thumbnails)
         layout.addWidget(self.pages)
-        controls = QHBoxLayout()
+        self.page_tools = QWidget()
+        controls = QHBoxLayout(self.page_tools)
+        controls.setContentsMargins(0, 0, 0, 0)
         add = QPushButton("+ Add page")
         add.clicked.connect(self.add_page)
         controls.addWidget(add)
@@ -142,7 +154,8 @@ class MergeView(QWidget):
         move = QPushButton("Move page to…")
         move.clicked.connect(self.move_to_position)
         controls.addWidget(move)
-        self.controls_layout.addLayout(controls)
+        controls.addStretch()
+
 
     def update_sets(self):
         colors = ["#a5d6b1", "#acc8f0", "#e5c4a1", "#d0b5e8", "#a7dcd9"]
@@ -186,6 +199,7 @@ class MergeView(QWidget):
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             self.crops[key] = dialog.cropbox()
+        self.edits_dirty = True
         self.render_thumbnails()
 
     def move_to_position(self):
@@ -214,7 +228,7 @@ class MergeView(QWidget):
     def resize_thumbnails(self, width):
         self.pages.setIconSize(QSize(width, int(width * 1.4)))
         self.pages.setGridSize(QSize(width + 40, int(width * 1.4) + 65))
-        self.zoom_label.setText(f"{width} px")
+        self.zoom_label.setText(f"{round(width / 260 * 100)}%")
         self.pages.doItemsLayout()
         self.render_timer.start(180)
 
@@ -241,6 +255,8 @@ class MergeView(QWidget):
                         page = document[key[1]]
                         if key in self.crops:
                             page.set_cropbox(pdf.Rect(self.crops[key]))
+                        from deskpdf.objects import apply_objects
+                        apply_objects(document, {key[1]: self.edits.get(key, [])})
                         item.setIcon(self.page_icon(page))
             except Exception as error:
                 for item in items:
