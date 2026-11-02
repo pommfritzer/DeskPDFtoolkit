@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pymupdf as pdf
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSize, QTimer
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QMenu, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -618,7 +618,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
@@ -641,6 +641,7 @@ class Window(QMainWindow):
 def main():
     parser = argparse.ArgumentParser(description="PDFtoolkit26 local PDF workbench")
     parser.add_argument("--tool", choices=list(TOOL_BY_ID), default=None)
+    parser.add_argument("--shell-open", action="store_true")
     parser.add_argument("files", nargs="*")
     arguments = parser.parse_args()
     app = QApplication(sys.argv[:1])
@@ -648,7 +649,26 @@ def main():
     app.setOrganizationName("PDFtoolkit26")
     app.setStyle("Fusion")
     app.setStyleSheet(STYLE)
+    from deskpdf.instance import InstanceBroker
+    broker = InstanceBroker()
+    request = {"tool": arguments.tool, "files": [str(Path(path).resolve()) for path in arguments.files]}
+    try:
+        if not broker.start_or_forward(request):
+            return
+    except RuntimeError as error:
+        QMessageBox.warning(None, "Open PDFtoolkit26", str(error))
+        return
     window = Window()
+    def receive(request):
+        if window.worker and window.worker.isRunning():
+            QTimer.singleShot(250, lambda: receive(request))
+            return
+        window.select_tool(TOOL_BY_ID.get(request.get("tool"), TOOL_BY_ID["merge"]))
+        window.add_paths([path for path in request.get("files", []) if isinstance(path, str) and Path(path).suffix.lower() == ".pdf"])
+        window.showNormal()
+        window.raise_()
+        window.activateWindow()
+    broker.requested.connect(receive)
     if arguments.tool or arguments.files:
         window.select_tool(TOOL_BY_ID[arguments.tool or "merge"])
         window.add_paths(arguments.files)

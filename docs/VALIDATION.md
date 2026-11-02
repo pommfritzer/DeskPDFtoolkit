@@ -1,5 +1,11 @@
 # Initial release validation
 
+## 0.5.1 Explorer open integration
+
+The menu label is Open with PDFtoolkit26, with a quoted executable icon path and Player multi-selection model. A process-level test forwards multiple requests, spaces and Unicode filenames to a single primary local server. A per-user instance lock handles simultaneous launches; the local server restricts access to the current user. Packaged smoke tests use an isolated instance scope to avoid interacting with a running user window.
+
+All 56 tests pass. After installation, the registered label, icon path and command were checked. Repeated shell-open requests against the installed executable completed successfully with only one application process remaining. Windows extracted the executable's icon resource successfully.
+
 ## 0.5.0 visual object editor
 
 All 55 tests pass. New tests verify exported text, embedded pictures, vector rectangle/ellipse objects, preservation of original PDF content, movement/resizing state, undo/redo, edits across pages and cancellation/discard behaviour for Escape. A rendered editor view was inspected. The editor works with newly added objects; it does not reconstruct arbitrary original document text into editable paragraphs.

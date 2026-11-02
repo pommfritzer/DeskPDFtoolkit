@@ -1,4 +1,4 @@
-#define AppVersion "0.5.0"
+#define AppVersion "0.5.1"
 [Setup]
 AppId={{E67CB156-753F-48F5-943A-71157495281C}
 AppName=PDFtoolkit26
@@ -46,14 +46,15 @@ Name: "{autodesktop}\PDFtoolkit26"; Filename: "{app}\PDFtoolkit26.exe"; Tasks: d
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open"; Flags: deletekey; Tasks: not explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Compress"; Flags: deletekey; Tasks: not explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Extract"; Flags: deletekey; Tasks: not explorer
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open"; ValueType: string; ValueName: ""; ValueData: "Open in PDFtoolkit26"; Flags: uninsdeletekey; Tasks: explorer
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\PDFtoolkit26.exe,0"; Tasks: explorer
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\PDFtoolkit26.exe"" ""%1"""; Tasks: explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open"; ValueType: string; ValueName: ""; ValueData: "Open with PDFtoolkit26"; Flags: uninsdeletekey; Tasks: explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\PDFtoolkit26.exe"",0"; Tasks: explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Tasks: explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\PDFtoolkit26.exe"" --shell-open ""%1"""; Tasks: explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Compress"; ValueType: string; ValueName: ""; ValueData: "Compress with PDFtoolkit26"; Flags: uninsdeletekey; Tasks: explorer
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Compress"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\PDFtoolkit26.exe,0"; Tasks: explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Compress"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\PDFtoolkit26.exe"",0"; Tasks: explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Compress\command"; ValueType: string; ValueName: ""; ValueData: """{app}\PDFtoolkit26.exe"" --tool compress ""%1"""; Tasks: explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Extract"; ValueType: string; ValueName: ""; ValueData: "Extract pages with PDFtoolkit26"; Flags: uninsdeletekey; Tasks: explorer
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Extract"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\PDFtoolkit26.exe,0"; Tasks: explorer
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Extract"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\PDFtoolkit26.exe"",0"; Tasks: explorer
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Extract\command"; ValueType: string; ValueName: ""; ValueData: """{app}\PDFtoolkit26.exe"" --tool extract ""%1"""; Tasks: explorer
 
 [Run]
