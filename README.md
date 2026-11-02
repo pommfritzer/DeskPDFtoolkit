@@ -14,9 +14,9 @@ Select one or more PDFs in Explorer and choose **Open with PDFtoolkit26**. The e
 
 ## Visual editor (0.5)
 
-Choose **Editor** in the top bar to edit the selected PDF, or choose a file if none is selected. The page canvas supports added text boxes, pictures, rectangles and ellipses. Select an object and drag it to move; drag its bottom-right handle to resize. The property panel edits text, font family, size, bold, italic and colour. Crop edits page margins. Undo/redo, page navigation, canvas zoom with Ctrl++/Ctrl+-, and save-a-copy are available. Closing or pressing Escape asks before discarding unsaved work.
+Choose **Editor** in the top bar to edit the selected PDF, or choose a file if none is selected. The page canvas supports added text boxes, pictures, rectangles and ellipses. Select an object and drag it to move; drag its bottom-right handle to resize. The property panel edits text, font family, size, bold, italic and colour, including custom colours. Crop edits page margins. Undo/redo, page navigation, canvas zoom with Ctrl++/Ctrl+-, and save-a-copy are available. Closing or pressing Escape asks before discarding unsaved work.
 
-Added objects leave the original content intact. Select supported existing text spans and embedded pictures to edit, move, resize or delete them; select a picture and choose Replace picture to swap it. Existing form widgets remain in the PDF. Edited original text is reconstructed using an approximate font and styling, and text is fitted within its box; check the saved result. Overlapping content, rotated pages and some complex or flattened content cannot be edited separately. Scanned text is part of a picture unless OCR has added a text layer. This is an initial visual editor, not complete Acrobat feature parity. PDF form filling and redaction remain available through their dedicated tools.
+Added objects leave the original content intact. Select supported existing text spans and embedded pictures to edit, move, resize or delete them; select a picture and choose Replace picture to swap it. Existing form widgets remain in the PDF. Edited original text preserves its color and opacity and uses an approximate font. Short single-line edits keep the original size and baseline when they fit; other text is fitted within its box. Check the saved result. Overlapping content, rotated pages and some complex or flattened content cannot be edited separately. Scanned text is part of a picture unless OCR has added a text layer. This is an initial visual editor, not complete Acrobat feature parity. PDF form filling and redaction remain available through their dedicated tools.
 
 **Your PDFs, at hand.** A quiet, local-first PDF workbench for Windows.
 
@@ -28,7 +28,7 @@ PDFtoolkit26 brings common PDF jobs into one native desktop app: choose a tool, 
 
 ## Install
 
-Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.6.3-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
+Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.6.4-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
 
 The optional Explorer integration adds **Open in PDFtoolkit26**, **Compress with PDFtoolkit26**, and **Extract pages with PDFtoolkit26** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
 
@@ -92,7 +92,7 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then:
 
 To upgrade the local installation and open Merge PDF, run `./scripts/install.ps1` from the project folder. It uses the project version's installer, retains installer task preferences, closes the previous app through the installer, and launches once afterward. Installation stays in `%LOCALAPPDATA%\Programs\PDFtoolkit26`; reinstalling updates the same Windows uninstall entry. Disabling Explorer integration or the desktop shortcut during setup removes those entries.
 
-The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.6.3-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.6.3` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
+The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.6.4-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.6.4` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
 
 ## Architecture
 

@@ -207,3 +207,84 @@ def test_cropping_after_edit_keeps_existing_text_identity(tmp_path, application_
     assert len(items) == 1
     focus.close()
     workspace.close()
+
+def test_existing_text_keeps_color_and_size_when_edited(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    source = tmp_path / "colored.pdf"
+    with pdf.open() as doc:
+        doc.new_page(width=400, height=400).insert_text((40, 70), "Colored", fontsize=11.25, color=(.12, .56, .78), fill_opacity=.4)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    original_color = item.obj.color
+    item.setSelected(True)
+    assert focus.color.currentData() == original_color
+    assert focus.size.value() == 11.25
+    focus.text.setPlainText("Edit")
+    assert item.obj.color == original_color
+    assert item.obj.size == 11.25
+    with pdf.open(stream=focus.document.tobytes()) as doc:
+        from deskpdf.objects import apply_objects
+        apply_objects(doc, {0: focus.objects[0]})
+        span = next(span for block in doc[0].get_text("dict")["blocks"] if block["type"] == 0 for line in block["lines"] for span in line["spans"] if "Edit" in span["text"])
+        assert span["color"] == int(original_color[1:], 16)
+        assert abs(span["size"] - 11.25) < .01
+        assert abs(span["origin"][1] - 70) < .01
+        assert abs(span["alpha"] - 102) <= 1
+    focus.close()
+    workspace.close()
+
+
+def test_clicking_existing_content_does_not_create_an_edit(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    from PySide6.QtTest import QTest
+    source = tmp_path / "click.pdf"
+    with pdf.open() as doc:
+        doc.new_page().insert_text((50, 70), "Click me")
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.show()
+    application_session.processEvents()
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem))
+    point = focus.view.mapFromScene(item.mapToScene(item.rect().center()))
+    QTest.mouseClick(focus.view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert focus.selected() is item
+    assert not focus.dirty
+    assert not focus.history
+    focus.close()
+    assert not workspace.edits_dirty
+    assert not workspace.selection()
+    workspace.close()
+
+def test_drag_existing_text_can_be_undone(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    source = tmp_path / "move.pdf"
+    with pdf.open() as doc:
+        doc.new_page(width=400, height=400).insert_text((50, 70), "Move me", fontsize=18)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.show()
+    application_session.processEvents()
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem))
+    original = item.obj.rect
+    point = focus.view.mapFromScene(item.mapToScene(item.rect().center()))
+    viewport = focus.view.viewport()
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=point)
+    QTest.mouseMove(viewport, point + QPoint(80, 80), delay=20)
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=point + QPoint(80, 80))
+    assert focus.dirty and len(focus.history) == 1
+    assert focus.objects[0][0].rect != original
+    focus.undo()
+    assert not focus.objects[0]
+    focus.redo()
+    assert focus.objects[0][0].rect != original
+    focus.close()
+    workspace.close()

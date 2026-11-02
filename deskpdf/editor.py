@@ -6,7 +6,7 @@ from pathlib import Path
 import pymupdf as pdf
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap, QKeySequence, QShortcut
-from PySide6.QtWidgets import QComboBox, QDialog, QFileDialog, QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget, QMessageBox
+from PySide6.QtWidgets import QColorDialog, QComboBox, QDialog, QFileDialog, QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QDoubleSpinBox, QVBoxLayout, QWidget, QMessageBox
 
 from deskpdf.engine import open_document
 from deskpdf.crop_page import CropPageDialog
@@ -31,6 +31,7 @@ class ObjectItem(QGraphicsRectItem):
 
     def paint(self, painter, option, widget=None):
         r = self.rect()
+        painter.setOpacity(self.obj.opacity)
         painter.setPen(QPen(QColor(self.obj.color), 2))
         if self.obj.source_rect and not self.obj.modified:
             pass
@@ -42,20 +43,21 @@ class ObjectItem(QGraphicsRectItem):
             painter.drawEllipse(r)
         else:
             font = QFont({"Sans": "Arial", "Serif": "Georgia", "Mono": "Courier New"}[self.obj.family])
-            font.setPixelSize(self.obj.size)
+            font.setPixelSize(max(1, round(self.obj.size)))
             font.setBold(self.obj.bold)
             font.setItalic(self.obj.italic)
             painter.setFont(font)
             painter.setClipRect(r)
             painter.drawText(r, Qt.TextFlag.TextWordWrap, self.obj.text)
         if self.isSelected():
+            painter.setOpacity(1)
             painter.setClipping(False)
             painter.setPen(QPen(QColor("#3baf70"), 1, Qt.PenStyle.DashLine))
             painter.drawRect(r)
             painter.fillRect(QRectF(r.right() - 9, r.bottom() - 9, 9, 9), QColor("#3baf70"))
 
     def mousePressEvent(self, event):
-        self.editor.remember()
+        self.before_edit = self.editor.snapshot()
         self.before_rect = (self.pos().x(), self.pos().y(), self.rect().width(), self.rect().height())
         self.resizing = event.pos().x() > self.rect().right() - 16 and event.pos().y() > self.rect().bottom() - 16
         super().mousePressEvent(event)
@@ -71,6 +73,7 @@ class ObjectItem(QGraphicsRectItem):
         self.setPos(max(0, min(self.pos().x(), bounds.width - self.rect().width())), max(0, min(self.pos().y(), bounds.height - self.rect().height())))
         after = (self.pos().x(), self.pos().y(), self.rect().width(), self.rect().height())
         if after != self.before_rect:
+            self.editor.remember(self.before_edit)
             self.obj.modified = True
         self.editor.capture()
         if after != self.before_rect:
@@ -120,16 +123,20 @@ class VisualEditor(QDialog):
         self.text.setMaximumHeight(200)
         self.family = QComboBox()
         self.family.addItems(["Sans", "Serif", "Mono"])
-        self.size = QSpinBox()
-        self.size.setRange(6, 144)
+        self.size = QDoubleSpinBox()
+        self.size.setRange(.1, 1000)
+        self.size.setDecimals(2)
         self.size.setSuffix(" pt")
         self.bold = QPushButton("Bold")
         self.bold.setCheckable(True)
         self.italic = QPushButton("Italic")
         self.italic.setCheckable(True)
         self.color = QComboBox()
-        self.color.addItems(["Forest", "Black", "Blue", "Red"])
-        for caption, widget in (("Text", self.text), ("Font", self.family), ("Size", self.size), ("", self.bold), ("", self.italic), ("Color", self.color)):
+        for name, value in (("Forest", "#204c37"), ("Black", "#111111"), ("Blue", "#225fbc"), ("Red", "#bc3434")):
+            self.color.addItem(name, value)
+        self.custom_color = QPushButton("Choose color…")
+        self.custom_color.clicked.connect(self.choose_color)
+        for caption, widget in (("Text", self.text), ("Font", self.family), ("Size", self.size), ("", self.bold), ("", self.italic), ("Color", self.color), ("", self.custom_color)):
             if caption: controls.addWidget(QLabel(caption))
             controls.addWidget(widget)
         controls.addStretch()
@@ -165,9 +172,12 @@ class VisualEditor(QDialog):
         entries.extend(obj for obj in self.objects.get(self.page, []) if obj.removed)
         self.objects[self.page] = entries
 
-    def remember(self):
+    def snapshot(self):
         self.capture()
-        self.history.append((self.document.tobytes(), copy.deepcopy(self.objects), self.page))
+        return self.document.tobytes(), copy.deepcopy(self.objects), self.page
+
+    def remember(self, snapshot=None):
+        self.history.append(snapshot if snapshot is not None else self.snapshot())
         self.history = self.history[-30:]
         self.future.clear()
         self.dirty = True
@@ -240,14 +250,14 @@ class VisualEditor(QDialog):
                         flags = span["flags"]
                         font = span["font"].lower()
                         family = "Mono" if flags & 8 else "Serif" if flags & 4 else "Sans"
-                        colors = ["#204c37", "#111111", "#225fbc", "#bc3434"]
-                        rgb = span["color"]
-                        color = min(colors, key=lambda value: sum((((rgb >> shift) & 255) - int(value[offset:offset + 2], 16)) ** 2 for shift, offset in ((16, 1), (8, 3), (0, 5))))
+                        color = f"#{span['color']:06x}"
                         origin = span["origin"]
                         identity = f"{origin[0] + page.cropbox.x0:.1f}:{origin[1] + page.cropbox.y0:.1f}:{span['text']}"
                         objects.append(Object("Text", tuple(box), text=span["text"], family=family,
-                                              size=max(6, min(144, round(span["size"]))), bold=bool(flags & 16) or "bold" in font,
+                                              size=span["size"], bold=bool(flags & 16) or "bold" in font,
                                               italic=bool(flags & 2), color=color, source_rect=tuple(box),
+                                              baseline_ratio=(origin[1] - span["bbox"][1]) / span["size"],
+                                              opacity=span.get("alpha", 255) / 255,
                                               source_id=f"t:{identity}", modified=False))
             elif block["type"] == 1 and block.get("image"):
                 transform = block.get("transform", (1, 0, 0, 1, 0, 0))
@@ -286,6 +296,7 @@ class VisualEditor(QDialog):
         for control in (self.family, self.size, self.bold, self.italic):
             control.setEnabled(is_text)
         self.color.setEnabled(bool(item and item.obj.kind != "Image"))
+        self.custom_color.setEnabled(bool(item and item.obj.kind != "Image"))
         self.replace_image.setVisible(bool(item and item.obj.kind == "Image"))
         if item:
             obj = item.obj
@@ -294,8 +305,23 @@ class VisualEditor(QDialog):
             self.size.setValue(obj.size)
             self.bold.setChecked(obj.bold)
             self.italic.setChecked(obj.italic)
-            self.color.setCurrentIndex(["#204c37", "#111111", "#225fbc", "#bc3434"].index(obj.color))
+            self.set_color(obj.color)
         self.loading = False
+
+    def set_color(self, color):
+        index = self.color.findData(color)
+        if index < 0:
+            self.color.addItem(color.upper(), color)
+            index = self.color.count() - 1
+        self.color.setCurrentIndex(index)
+
+    def choose_color(self):
+        item = self.selected()
+        if not item:
+            return
+        color = QColorDialog.getColor(QColor(item.obj.color), self, "Choose color")
+        if color.isValid():
+            self.set_color(color.name())
 
     def apply_properties(self):
         item = self.selected()
@@ -304,7 +330,7 @@ class VisualEditor(QDialog):
         obj = item.obj
         obj.text, obj.family, obj.size = self.text.toPlainText(), self.family.currentText(), self.size.value()
         obj.bold, obj.italic = self.bold.isChecked(), self.italic.isChecked()
-        obj.color = ["#204c37", "#111111", "#225fbc", "#bc3434"][self.color.currentIndex()]
+        obj.color = self.color.currentData()
         obj.modified = True
         self.capture()
         self.refresh_background()
