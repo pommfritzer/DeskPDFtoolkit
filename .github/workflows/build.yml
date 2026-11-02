@@ -38,13 +38,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          Get-FileHash releases/PDFtoolkit26-0.6.1-Setup.exe -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLower() + '  PDFtoolkit26-0.6.1-Setup.exe' } | Set-Content -Encoding ascii releases/SHA256SUMS.txt
+          Get-FileHash releases/PDFtoolkit26-0.6.2-Setup.exe -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLower() + '  PDFtoolkit26-0.6.2-Setup.exe' } | Set-Content -Encoding ascii releases/SHA256SUMS.txt
           gh release view $env:GITHUB_REF_NAME
           if ($LASTEXITCODE) {
             gh release create $env:GITHUB_REF_NAME --draft --prerelease --title "PDFtoolkit26 $env:GITHUB_REF_NAME — Windows preview" --notes "Native Windows PDF workbench. See the README for supported tools, optional dependencies, and limitations. This preview installer is unsigned."
             if ($LASTEXITCODE) { throw 'Could not create release.' }
           }
-          gh release upload $env:GITHUB_REF_NAME releases/PDFtoolkit26-0.6.1-Setup.exe releases/SHA256SUMS.txt --clobber
+          gh release upload $env:GITHUB_REF_NAME releases/PDFtoolkit26-0.6.2-Setup.exe releases/SHA256SUMS.txt --clobber
           if ($LASTEXITCODE) { throw 'Could not upload installer.' }
           gh release edit $env:GITHUB_REF_NAME --draft=false --prerelease
           if ($LASTEXITCODE) { throw 'Could not publish release.' }

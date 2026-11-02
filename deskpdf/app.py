@@ -380,6 +380,17 @@ class Window(QMainWindow):
         editor_layout = QHBoxLayout(self.editor_controls)
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.addWidget(settings_scroll, 1)
+        self.options_panel = QScrollArea()
+        self.options_panel.setWidgetResizable(True)
+        self.options_panel.setMaximumWidth(500)
+        options_content = QWidget(objectName="catalog")
+        options_layout = QVBoxLayout(options_content)
+        options_layout.setContentsMargins(0, 0, 12, 0)
+        options_layout.addWidget(self.settings_title)
+        options_layout.addWidget(self.form_widget)
+        options_layout.addStretch()
+        self.options_panel.setWidget(options_content)
+        editor_layout.addWidget(self.options_panel, 1)
         editor_layout.addWidget(self.visual_merge.controls, 2)
         self.topbar.layout().addWidget(self.editor_controls)
         self.editor_controls.hide()
@@ -415,6 +426,15 @@ class Window(QMainWindow):
         self.topbar.layout().addWidget(self.status)
         footer = QHBoxLayout()
         footer.addWidget(self.visual_merge.page_tools)
+        self.selection_summary = label("", "muted")
+        self.selection_summary.setAccessibleName("Selected pages")
+        footer.addWidget(self.selection_summary)
+        self.selection_timer = QTimer(self)
+        self.selection_timer.setSingleShot(True)
+        self.selection_timer.timeout.connect(self.update_selection_summary)
+        self.visual_merge.pages.model().dataChanged.connect(lambda *args: self.selection_timer.start(0))
+        self.visual_merge.pages.model().rowsInserted.connect(lambda *args: self.selection_timer.start(0))
+        self.visual_merge.pages.model().rowsRemoved.connect(lambda *args: self.selection_timer.start(0))
         footer.addStretch()
         self.open_result = button("Open result ↗", self.open_output)
         self.open_result.hide()
@@ -429,14 +449,15 @@ class Window(QMainWindow):
     def select_tool(self, tool):
         self.add_page_action.show()
         self.editor_controls.show()
-        self.description.hide()
+        self.description.setVisible(tool.id in {"word", "powerpoint", "ocr", "office", "redact", "clean", "crop", "sign", "forms"})
         self.set_partition_default(.30)
         self.visual_merge.controls.setVisible(tool.id == "merge")
+        self.options_panel.setVisible(tool.id != "merge" and bool(tool.fields))
         self.visual_merge.page_tools.setVisible(tool.id == "merge")
         self.current_tool = tool
         self.title.setText(tool.title)
         self.active_title.setText(tool.title)
-        self.settings_scroll.setMaximumWidth(280 if tool.id == "merge" else 500)
+        self.settings_scroll.setMaximumWidth(320)
         self.settings_scroll.setMinimumWidth(240)
         self.description.setText(tool.description)
         self.fields.clear()
@@ -458,6 +479,8 @@ class Window(QMainWindow):
                     widget.setEchoMode(QLineEdit.EchoMode.Password)
             widget.setAccessibleName(title)
             widget.setToolTip(hint)
+            if isinstance(widget, QLineEdit):
+                widget.setPlaceholderText(hint)
             self.fields[name] = widget
             if name == "signature":
                 row = QWidget()
@@ -469,6 +492,8 @@ class Window(QMainWindow):
             else:
                 self.form.addRow(title, widget)
         self.visual_merge.setVisible(tool.id == "merge")
+        self.selection_summary.setVisible(tool.id == "merge")
+        self.update_selection_summary()
         self.settings_title.setVisible(tool.id != "merge")
         self.order_hint.setText("Arrange pages directly in the thumbnail grid." if tool.id == "merge" else "Drag files to change their order.")
         self.preview_frame.setVisible(tool.id != "merge")
@@ -479,6 +504,15 @@ class Window(QMainWindow):
         self.open_result.hide()
         self.stack.setCurrentIndex(1)
         self.refresh_preview()
+
+    def update_selection_summary(self):
+        count = len(self.visual_merge.selection())
+        if count:
+            self.selection_summary.setText(f"{count} page{'s' if count != 1 else ''} selected")
+        elif self.visual_merge.pages.count():
+            self.selection_summary.setText("Select pages to include")
+        else:
+            self.selection_summary.clear()
 
     def choose_signature(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose signature image", "", "Images (*.png *.jpg *.jpeg)")
@@ -584,6 +618,9 @@ class Window(QMainWindow):
         if not self.current_tool.multiple and len(self.paths) != 1:
             self.status.setText("This tool works on one file at a time. Remove the other files first.")
             return
+        if self.current_tool.id == "merge" and not self.visual_merge.selection():
+            self.status.setText("Click page thumbnails to include them first.")
+            return
         extension = self.current_tool.extension
         default = self.paths[0].with_name(f"{self.paths[0].stem}-{self.current_tool.id}.{extension}")
         temporary_pages = Path(self.visual_merge.generated_pages.name).resolve()
@@ -644,7 +681,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.2\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

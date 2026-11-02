@@ -56,6 +56,14 @@ class PageGrid(QListWidget):
     focus_page = Signal(int)
     set_action = Signal(int)
 
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.currentItem():
+            item = self.currentItem()
+            item.setCheckState(Qt.CheckState.Unchecked if item.checkState() == Qt.CheckState.Checked else Qt.CheckState.Checked)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def paintEvent(self, event):
         super().paintEvent(event)
         if not self.count():

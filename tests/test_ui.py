@@ -15,6 +15,9 @@ def test_all_tool_forms_and_search():
         window.select_tool(tool)
         assert window.title.text() == tool.title
         assert set(window.fields) == set(tool.fields)
+        assert window.options_panel.isHidden() == (not tool.fields)
+        if tool.id in {"ocr", "office", "word", "powerpoint", "redact", "clean", "crop", "sign", "forms"}:
+            assert not window.description.isHidden()
     window.show_catalog("Security")
     window.search.setText("protect")
     assert window.cards.itemAtPosition(0, 0).widget().text().find("Protect PDF") >= 0
@@ -43,6 +46,8 @@ def test_combined_merge_grid(tmp_path):
     assert grid.count() == 6
     for index in (0, 2, 4):
         window.visual_merge.toggle(grid.item(index))
+    app.processEvents()
+    assert window.selection_summary.text() == "3 pages selected"
     grid.move_page(4, 0)
     window.file_list.setCurrentRow(1)
     assert grid.count() == 6
@@ -67,6 +72,14 @@ def test_combined_merge_grid(tmp_path):
     assert len(window.visual_merge.selection()) == 3
     window.visual_merge.select_all(False)
     assert not window.visual_merge.selection()
+    with patch.object(QFileDialog, "getSaveFileName") as save_dialog:
+        window.start_job()
+        save_dialog.assert_not_called()
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    grid.setCurrentRow(0)
+    QTest.keyClick(grid, Qt.Key.Key_Space)
+    assert len(window.visual_merge.selection()) == 1
     window.close()
 
 
