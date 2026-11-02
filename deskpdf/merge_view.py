@@ -19,7 +19,7 @@ class PageActions(QStyledItemDelegate):
         color = index.data(Qt.ItemDataRole.UserRole + 4) or "#bde2cd"
         painter.setPen(QColor(color))
         painter.drawLine(option.rect.left() + 4, option.rect.top() + 4, option.rect.right() - 4, option.rect.top() + 4)
-        for offset, text in ((8, "×"), (38, "⌗")):
+        for offset, text in ((8, "×"), (38, "⌗"), (68, "focus")):
             rect = option.rect.adjusted(option.rect.width() - 32, offset, -6, -(option.rect.height() - offset - 26))
             painter.fillRect(rect, QColor("#163f32"))
             painter.setPen(QPen(QColor(color), 1.5))
@@ -27,6 +27,9 @@ class PageActions(QStyledItemDelegate):
             if text == "×":
                 painter.drawLine(x + 8, y + 8, x + 18, y + 18)
                 painter.drawLine(x + 18, y + 8, x + 8, y + 18)
+            elif text == "focus":
+                painter.drawRect(x + 6, y + 6, 14, 14)
+                painter.drawLine(x + 9, y + 17, x + 18, y + 8)
             else:
                 painter.drawLine(x + 8, y + 4, x + 8, y + 18)
                 painter.drawLine(x + 8, y + 18, x + 22, y + 18)
@@ -40,6 +43,7 @@ class PageGrid(QListWidget):
     order_changed = Signal()
     delete_page = Signal(int)
     crop_page = Signal(int)
+    focus_page = Signal(int)
     set_action = Signal(int)
 
     def mouseReleaseEvent(self, event):
@@ -48,12 +52,12 @@ class PageGrid(QListWidget):
             rect = self.visualRect(index)
             x = event.position().x() - rect.left()
             y = event.position().y() - rect.top()
-            if x > rect.width() - 36 and 8 <= y < 65:
+            if x > rect.width() - 36 and 8 <= y < 95:
                 row = index.row()
                 self.blockSignals(True)
                 super().mouseReleaseEvent(event)
                 self.blockSignals(False)
-                (self.delete_page if y < 36 else self.crop_page).emit(row)
+                (self.delete_page if y < 36 else self.crop_page if y < 66 else self.focus_page).emit(row)
                 return
             if x < 70 and y < 36 and index.data(Qt.ItemDataRole.UserRole + 5):
                 row = index.row()
@@ -111,6 +115,7 @@ class MergeView(QWidget):
         self.pages.order_changed.connect(self.update_sets)
         self.pages.delete_page.connect(self.delete_page)
         self.pages.crop_page.connect(self.crop_page)
+        self.pages.focus_page.connect(self.focus_page)
         self.pages.set_action.connect(self.toggle_set)
         self.crops = {}
         self.collapsed = set()
@@ -163,6 +168,12 @@ class MergeView(QWidget):
     def delete_page(self, row):
         self.pages.takeItem(row)
         self.update_sets()
+
+    def focus_page(self, row):
+        from deskpdf.focus_page import PageFocus
+        dialog = PageFocus(self, row, self)
+        dialog.showMaximized()
+        dialog.exec()
 
     def crop_page(self, row):
         item = self.pages.item(row)

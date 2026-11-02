@@ -1,5 +1,9 @@
 # Initial release validation
 
+## 0.5.3 resizable toolbar and page focus
+
+All 58 tests pass. New tests verify manual toolbar sizing survives window resizing, focus navigation boundaries, cropped focus rendering, and selection synchronisation with the thumbnail workspace. The compact toolbar and focused page view were rendered and visually inspected.
+
 ## 0.5.2 Windows 11 modern menu
 
 Built an x64 native IExplorerCommand DLL and sparse MSIX registration. Windows rejected unsigned executable activation and current-user-only signing trust. With the user's explicit approval, the local PDFtoolkit26 certificate was installed into Local Machine Trusted People; the signed package then registered with status OK. Native COM activation verified the exact menu title, executable icon path, enabled PDF state, and invocation handoff. No global menu preference or system security setting was disabled.

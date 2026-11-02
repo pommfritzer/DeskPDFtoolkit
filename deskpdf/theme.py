@@ -64,3 +64,5 @@ STYLE += "QPushButton#brand { background: transparent; border: 0; padding: 0; fo
 STYLE += "QDialog { background: #123a31; } QToolButton { background: #214a3b; color: #e8f3ec; border: 1px solid #658775; border-radius: 6px; padding: 8px 16px; } QToolButton:checked { background: #bee2c5; color: #143a2a; }"
 
 STYLE += "QPushButton#passwordConfirm { border-radius: 17px; background: #bee2c5; color: #143a2a; padding: 0; text-align: center; font-size: 22px; }"
+
+STYLE += "QSplitter::handle:vertical { background: #406f58; } QSplitter::handle:vertical:hover { background: #a2d8b4; }"

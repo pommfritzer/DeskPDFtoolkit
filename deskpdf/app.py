@@ -7,7 +7,7 @@ import pymupdf as pdf
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSize, QTimer
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QMenu, QFileDialog, QFormLayout, QFrame, QGridLayout,
+    QApplication, QComboBox, QMenu, QSplitter, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea,
     QStackedWidget, QVBoxLayout, QWidget,
@@ -148,10 +148,22 @@ class Window(QMainWindow):
         top.addWidget(button("Editor", self.open_visual_editor))
         top.addWidget(settings)
         navigation.addLayout(top)
-        shell.addWidget(self.topbar)
+        self.toolbar_manual = False
+        self.partition = QSplitter(Qt.Orientation.Vertical)
+        self.partition.setChildrenCollapsible(False)
+        self.partition.setHandleWidth(9)
+        self.toolbar_scroll = QScrollArea()
+        self.toolbar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.toolbar_scroll.setWidgetResizable(True)
+        self.toolbar_scroll.setMinimumHeight(64)
+        self.toolbar_scroll.setWidget(self.topbar)
+        self.partition.addWidget(self.toolbar_scroll)
+        self.partition.splitterMoved.connect(lambda position, index: setattr(self, "toolbar_manual", True))
+        shell.addWidget(self.partition, 1)
         self.stack = QStackedWidget()
         self.stack.setContentsMargins(24, 0, 24, 12)
-        shell.addWidget(self.stack, 1)
+        self.partition.addWidget(self.stack)
+        self.partition.setStretchFactor(1, 1)
         self.build_catalog()
         self.build_workbench()
         self.show_catalog()
@@ -218,8 +230,13 @@ class Window(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, "topbar"):
-            self.topbar.setFixedHeight(round(self.height() * (.40 if hasattr(self, "stack") and self.stack.currentIndex() == 1 else .22)))
+        if hasattr(self, "partition") and not self.toolbar_manual:
+            self.set_partition_default(.40 if self.stack.currentIndex() == 1 else .22)
+
+    def set_partition_default(self, fraction):
+        if not self.toolbar_manual:
+            top = round(self.height() * fraction)
+            self.partition.setSizes([top, max(240, self.height() - top)])
 
     def search_tools(self):
         if hasattr(self, "cards"):
@@ -253,7 +270,7 @@ class Window(QMainWindow):
         self.add_page_action.hide()
         self.editor_controls.hide()
         self.description.hide()
-        self.topbar.setFixedHeight(round(self.height() * .22))
+        self.set_partition_default(.22)
         self.group = group
         self.active_title.setText("")
         self.stack.setCurrentIndex(0)
@@ -409,7 +426,7 @@ class Window(QMainWindow):
         self.add_page_action.show()
         self.editor_controls.show()
         self.description.hide()
-        self.topbar.setFixedHeight(round(self.height() * .40))
+        self.set_partition_default(.40)
         self.visual_merge.controls.setVisible(tool.id == "merge")
         self.current_tool = tool
         self.title.setText(tool.title)
@@ -618,7 +635,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.2\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.3\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
