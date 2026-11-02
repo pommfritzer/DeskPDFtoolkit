@@ -85,6 +85,70 @@ def run_tool(tool: str, paths: list[Path], destination: Path, options: dict) -> 
     return destination
 
 
+def merge_grouped(document, paths, selections, crops, edits, options, password):
+    from deskpdf.objects import apply_objects, apply_related_forms
+
+    sizes = {paths[0]: len(document)}
+    for path in dict.fromkeys(paths[1:]):
+        if path not in sizes:
+            with open_document(path, password) as source:
+                sizes[path] = len(source)
+    pages = []
+    actions = {path: {} for path in sizes}
+    for path, expression, crop, page_edits in zip(paths, selections, crops, edits):
+        try:
+            indexes = parse_pages(expression, sizes[path])
+        except ToolError as error:
+            raise ToolError(f"{path.name}: {error}") from None
+        for position, index in enumerate(indexes):
+            action = (crop if position == 0 else None,
+                      [obj for obj in page_edits if obj.kind != "Form"] if position == 0 else [])
+            previous = actions[path].get(index)
+            if previous is not None and previous != action:
+                return False
+            actions[path][index] = action
+            pages.append((path, index))
+
+    all_forms = options.get("merge_form_edits")
+    if all_forms is None:
+        all_forms = [(str(path), parse_pages(expression, sizes[path])[0], obj)
+                     for path, expression, entries in zip(paths, selections, edits)
+                     for obj in entries if obj.kind == "Form"]
+
+    def prepare(source, path):
+        related = [(page, obj) for source_path, page, obj in all_forms if Path(source_path).resolve() == path]
+        apply_related_forms(source, related)
+        for index, (crop, objects) in actions[path].items():
+            if crop is not None:
+                source[index].set_cropbox(pdf.Rect(crop))
+            if objects:
+                apply_objects(source, {index: objects})
+
+    prepare(document, paths[0])
+    page_map = {(paths[0], index): index for index in actions[paths[0]]}
+    for path in dict.fromkeys(paths[1:]):
+        if path == paths[0]:
+            continue
+        with open_document(path, password) as source:
+            prepare(source, path)
+            indexes = sorted(actions[path])
+            connected = any(source[index].first_widget or any(link["kind"] == pdf.LINK_GOTO for link in source[index].get_links()) for index in indexes)
+            ranges = []
+            for index in indexes:
+                if ranges and (connected or index == ranges[-1][1] + 1):
+                    ranges[-1] = (ranges[-1][0], index)
+                else:
+                    ranges.append((index, index))
+            for sequence, (first, last) in enumerate(ranges):
+                offset = len(document)
+                document.insert_pdf(source, from_page=first, to_page=last, final=int(sequence == len(ranges) - 1))
+                for index in indexes:
+                    if first <= index <= last:
+                        page_map[(path, index)] = offset + index - first
+    document.select([page_map[(path, index)] for path, index in pages])
+    return True
+
+
 def _process(tool, paths, target, options):
     password = options.get("password", "")
     with ExitStack() as stack:
@@ -137,6 +201,11 @@ def _process(tool, paths, target, options):
             edits = options.get("merge_edits", [[] for _ in paths])
             if not isinstance(edits, list) or len(edits) != len(paths):
                 raise ToolError("Page edits do not match the selected input pages.")
+            if not isinstance(crops, list) or len(crops) != len(paths):
+                raise ToolError("Page crops do not match the selected input pages.")
+            if merge_grouped(document, paths, selections, crops, edits, options, password):
+                document.save(target, garbage=4, deflate=True, use_objstms=1, encryption=pdf.PDF_ENCRYPT_KEEP)
+                return
             from deskpdf.objects import apply_objects, apply_related_forms
 
             def apply_source_forms(source, path):

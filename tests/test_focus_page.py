@@ -515,6 +515,14 @@ def test_linked_fields_stay_in_sync_across_focus_and_merge(tmp_path, application
     with pdf.open(output) as doc:
         assert [next(page.widgets()).field_value for page in doc] == ["Bob", "Bob"]
         assert all("Bob" in page.get_text() for page in doc)
+        page = doc[0]
+        field = next(page.widgets())
+        field.field_value = "Charlie"
+        field.update()
+        updated = tmp_path / "merged-updated.pdf"
+        doc.save(updated)
+    with pdf.open(updated) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Charlie", "Charlie"]
     only_first = tmp_path / "first.pdf"
     run_tool("merge", [source], only_first, {"merge_pages": ["1"], "merge_form_edits": related})
     with pdf.open(only_first) as doc:
@@ -614,3 +622,97 @@ def test_merge_keeps_form_widgets_when_importing_multiple_pages(tmp_path):
     run_tool("merge", [cover, linked], output, {"merge_pages": ["1", "1-2"]})
     with pdf.open(output) as doc:
         assert [next(doc[index].widgets()).field_value for index in (1, 2)] == ["Old", "Old"]
+
+def test_merge_preserves_linked_fields_without_linking_different_documents(tmp_path):
+    from deskpdf.engine import run_tool
+    first = tmp_path / "first.pdf"
+    second = tmp_path / "second.pdf"
+    make_linked_form(first)
+    make_linked_form(second)
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [first, second, first, second], output, {"merge_pages": ["2", "1", "1", "2"]})
+    updated = tmp_path / "updated.pdf"
+    with pdf.open(output) as doc:
+        assert len(doc) == 4
+        assert [next(page.widgets()).field_value for page in doc] == ["Old"] * 4
+        page = doc[0]
+        widget = next(page.widgets())
+        widget.field_value = "Changed first document"
+        widget.update()
+        doc.save(updated)
+    with pdf.open(updated) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Changed first document", "Old", "Changed first document", "Old"]
+    with pdf.open(first) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Old", "Old"]
+
+
+def test_merge_keeps_distinct_crops_for_repeated_page(tmp_path):
+    from deskpdf.engine import run_tool
+    source = tmp_path / "single.pdf"
+    with pdf.open() as doc:
+        doc.new_page(width=400, height=500)
+        doc.save(source)
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [source, source], output, {
+        "merge_pages": ["1", "1"],
+        "merge_crops": [(0, 0, 300, 500), (0, 0, 200, 500)],
+    })
+    with pdf.open(output) as doc:
+        assert [page.rect.width for page in doc] == [300, 200]
+
+def test_merge_retains_internal_links_after_interleaving_sources(tmp_path):
+    from deskpdf.engine import run_tool
+    paths = [tmp_path / "a.pdf", tmp_path / "b.pdf"]
+    for path in paths:
+        with pdf.open() as doc:
+            doc.new_page(width=300, height=300).insert_text((40, 50), f"{path.stem}1")
+            doc.new_page(width=300, height=300).insert_text((40, 50), f"{path.stem}2")
+            doc[0].insert_link({"kind": pdf.LINK_GOTO, "from": pdf.Rect(10, 10, 100, 30), "page": 1, "to": pdf.Point(0, 0)})
+            doc.save(path)
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [paths[0], paths[1], paths[0], paths[1]], output, {"merge_pages": ["1", "1", "2", "2"]})
+    with pdf.open(output) as doc:
+        assert [page.get_text().strip() for page in doc] == ["a1", "b1", "a2", "b2"]
+        assert doc[0].get_links()[0]["page"] == 2
+        assert doc[1].get_links()[0]["page"] == 3
+
+
+def test_merge_keeps_first_document_password(tmp_path):
+    from deskpdf.engine import run_tool
+    protected = tmp_path / "protected.pdf"
+    cover = tmp_path / "cover.pdf"
+    with pdf.open() as doc:
+        doc.new_page().insert_text((40, 60), "Protected")
+        doc.save(protected, encryption=pdf.PDF_ENCRYPT_AES_256, user_pw="secret", owner_pw="secret")
+    with pdf.open() as doc:
+        doc.new_page().insert_text((40, 60), "Cover")
+        doc.save(cover)
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [protected, cover], output, {"password": "secret"})
+    with pdf.open(output) as doc:
+        assert doc.needs_pass
+        assert doc.authenticate("secret")
+        assert [page.get_text().strip() for page in doc] == ["Protected", "Cover"]
+
+def test_merge_copies_only_selected_pages_from_unconnected_source(tmp_path, monkeypatch):
+    from deskpdf.engine import run_tool
+    cover = tmp_path / "cover.pdf"
+    source = tmp_path / "long.pdf"
+    with pdf.open() as doc:
+        doc.new_page()
+        doc.save(cover)
+    with pdf.open() as doc:
+        for index in range(12):
+            doc.new_page().insert_text((40, 60), f"Page {index + 1}")
+        doc.save(source)
+    copied = []
+    original = pdf.Document.insert_pdf
+    def track(target, source_doc, **kwargs):
+        copied.append((kwargs.get("from_page"), kwargs.get("to_page")))
+        return original(target, source_doc, **kwargs)
+    monkeypatch.setattr(pdf.Document, "insert_pdf", track)
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [cover, source], output, {"merge_pages": ["1", "1,12"]})
+    assert copied == [(0, 0), (11, 11)]
+    with pdf.open(output) as doc:
+        assert [page.get_text().strip() for page in doc][1:] == ["Page 1", "Page 12"]
