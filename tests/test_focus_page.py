@@ -99,3 +99,111 @@ def test_focus_edits_survive_navigation_and_merge_export(tmp_path, application_s
     with pdf.open(source) as doc:
         assert "Edited in focus" not in doc[0].get_text()
     workspace.close()
+
+def test_focus_edits_existing_text_and_image(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+    from PIL import Image
+    source = tmp_path / "existing.pdf"
+    picture = tmp_path / "original.png"
+    replacement = tmp_path / "replacement.png"
+    Image.new("RGB", (60, 40), "red").save(picture)
+    Image.new("RGB", (60, 40), "blue").save(replacement)
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        page.insert_text((40, 80), "Original words", fontsize=18)
+        page.insert_text((40, 130), "Keep this line", fontsize=14)
+        page.insert_image(pdf.Rect(40, 200, 160, 280), filename=str(picture))
+        doc.new_page(width=400, height=500)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    workspace.select_all(True)
+    focus = PageFocus(workspace, 0)
+    items = [item for item in focus.scene.items() if isinstance(item, ObjectItem)]
+    text_item = next(item for item in items if item.obj.kind == "Text" and item.obj.text == "Original words")
+    text_item.setSelected(True)
+    focus.text.setPlainText("Changed words")
+    image_item = next(item for item in items if item.obj.kind == "Image")
+    focus.scene.clearSelection()
+    image_item.setSelected(True)
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QFileDialog
+    with patch.object(QFileDialog, "getOpenFileName", return_value=(str(replacement), "")):
+        focus.change_image()
+    image_item.setPos(200, 200)
+    focus.capture()
+    focus.navigate(1)
+    focus.navigate(-1)
+    assert any(obj.text == "Changed words" for obj in focus.objects[0])
+    focus.close()
+    selected = workspace.selection()
+    output = tmp_path / "edited.pdf"
+    run_tool("merge", [Path(path) for path, number in selected], output, {
+        "merge_pages": [str(number + 1) for path, number in selected],
+        "merge_crops": [workspace.crops.get(key) for key in selected],
+        "merge_edits": [workspace.edits.get(key, []) for key in selected],
+    })
+    with pdf.open(output) as doc:
+        text = doc[0].get_text()
+        assert "Changed words" in text
+        assert "Original words" not in text
+        assert "Keep this line" in text
+        pix = doc[0].get_pixmap(alpha=False)
+        assert pix.pixel(220, 220)[2] > 200
+        assert pix.pixel(80, 220) == (255, 255, 255)
+    with pdf.open(source) as doc:
+        assert "Original words" in doc[0].get_text()
+    workspace.close()
+
+def test_existing_content_selection_undo_and_delete(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    source = tmp_path / "input.pdf"
+    with pdf.open() as doc:
+        doc.new_page().insert_text((50, 70), "Original text")
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.source_rect)
+    item.setSelected(True)
+    focus.capture()
+    assert not focus.objects[0]
+    focus.text.setPlainText("New text")
+    focus.undo()
+    assert not focus.objects[0]
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.source_rect)
+    item.setSelected(True)
+    focus.delete()
+    assert len(focus.objects[0]) == 1 and focus.objects[0][0].removed
+    focus.undo()
+    assert not focus.objects[0]
+    focus.close()
+    workspace.close()
+
+def test_cropping_after_edit_keeps_existing_text_identity(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.crop_page import CropPageDialog
+    from PySide6.QtCore import QRectF
+    from PySide6.QtWidgets import QDialog
+    from unittest.mock import patch
+    source = tmp_path / "crop.pdf"
+    with pdf.open() as doc:
+        doc.new_page(width=400, height=600).insert_text((60, 80), "Original")
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.source_rect)
+    item.setSelected(True)
+    focus.text.setPlainText("Changed")
+    def crop_edges(dialog):
+        canvas = dialog.canvas
+        canvas.selection = QRectF(canvas.width() * .05, canvas.height() * .05, canvas.width() * .9, canvas.height() * .9)
+        return QDialog.DialogCode.Accepted
+    with patch.object(CropPageDialog, "exec", crop_edges):
+        focus.crop()
+    items = [item for item in focus.scene.items() if isinstance(item, ObjectItem)]
+    assert len(items) == 1
+    focus.close()
+    workspace.close()

@@ -12,7 +12,7 @@ from deskpdf.engine import open_document
 from deskpdf.crop_page import CropPageDialog
 
 
-from deskpdf.objects import Object, apply_objects, export_objects
+from deskpdf.objects import Object, apply_objects, export_objects, remove_originals
 
 
 class ObjectItem(QGraphicsRectItem):
@@ -22,14 +22,19 @@ class ObjectItem(QGraphicsRectItem):
         self.editor = editor
         self.setPos(obj.rect[0], obj.rect[1])
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setZValue(1 if obj.source_rect and obj.kind == "Image" else 2 if obj.source_rect else 3)
         self.setAcceptHoverEvents(True)
         self.resizing = False
-        self.image = QPixmap(obj.image) if obj.kind == "Image" else None
+        self.image = QPixmap() if obj.kind == "Image" else None
+        if self.image is not None:
+            self.image.loadFromData(obj.image_data) if obj.image_data else self.image.load(obj.image)
 
     def paint(self, painter, option, widget=None):
         r = self.rect()
         painter.setPen(QPen(QColor(self.obj.color), 2))
-        if self.obj.kind == "Image":
+        if self.obj.source_rect and not self.obj.modified:
+            pass
+        elif self.obj.kind == "Image":
             painter.drawPixmap(r, self.image, QRectF(self.image.rect()))
         elif self.obj.kind == "Rectangle":
             painter.drawRect(r)
@@ -51,6 +56,7 @@ class ObjectItem(QGraphicsRectItem):
 
     def mousePressEvent(self, event):
         self.editor.remember()
+        self.before_rect = (self.pos().x(), self.pos().y(), self.rect().width(), self.rect().height())
         self.resizing = event.pos().x() > self.rect().right() - 16 and event.pos().y() > self.rect().bottom() - 16
         super().mousePressEvent(event)
 
@@ -63,7 +69,12 @@ class ObjectItem(QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         bounds = self.editor.document[self.editor.page].rect
         self.setPos(max(0, min(self.pos().x(), bounds.width - self.rect().width())), max(0, min(self.pos().y(), bounds.height - self.rect().height())))
+        after = (self.pos().x(), self.pos().y(), self.rect().width(), self.rect().height())
+        if after != self.before_rect:
+            self.obj.modified = True
         self.editor.capture()
+        if after != self.before_rect:
+            self.editor.refresh_background()
         super().mouseReleaseEvent(event)
 
 
@@ -100,6 +111,10 @@ class VisualEditor(QDialog):
         props = QWidget()
         props.setFixedWidth(240)
         controls = QVBoxLayout(props)
+        self.content_hint = QLabel("Select text or a picture on the page")
+        self.content_hint.setWordWrap(True)
+        self.content_hint.setToolTip("Some overlapping, rotated or flattened content cannot be edited separately.")
+        controls.addWidget(self.content_hint)
         self.text = QPlainTextEdit()
         self.text.setPlaceholderText("Select a text box to edit its words")
         self.text.setMaximumHeight(200)
@@ -118,6 +133,9 @@ class VisualEditor(QDialog):
             if caption: controls.addWidget(QLabel(caption))
             controls.addWidget(widget)
         controls.addStretch()
+        self.replace_image = QPushButton("Replace picture…")
+        self.replace_image.clicked.connect(self.change_image)
+        controls.insertWidget(0, self.replace_image)
         body.addWidget(props)
         layout.addLayout(body, 1)
         self.text.textChanged.connect(self.apply_properties)
@@ -142,7 +160,9 @@ class VisualEditor(QDialog):
             if isinstance(item, ObjectItem):
                 r = item.rect().translated(item.pos())
                 item.obj.rect = (r.left(), r.top(), r.right(), r.bottom())
-                entries.append(item.obj)
+                if not item.obj.source_rect or item.obj.modified:
+                    entries.append(item.obj)
+        entries.extend(obj for obj in self.objects.get(self.page, []) if obj.removed)
         self.objects[self.page] = entries
 
     def remember(self):
@@ -169,17 +189,90 @@ class VisualEditor(QDialog):
         self.loading = True
         self.scene.clear()
         page = self.document[self.page]
-        pix = page.get_pixmap(matrix=pdf.Matrix(1.5, 1.5), alpha=False)
-        image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888).copy()
-        background = self.scene.addPixmap(QPixmap.fromImage(image))
-        background.setScale(1 / 1.5)
-        background.setZValue(-100)
+        self.content_hint.setText("Existing content on rotated pages cannot be edited yet." if page.rotation else "Select text or a picture on the page")
+        self.background = self.scene.addPixmap(QPixmap())
+        self.background.setScale(1 / 1.5)
+        self.background.setZValue(-100)
+        self.refresh_background()
         self.scene.setSceneRect(0, 0, page.rect.width, page.rect.height)
-        for obj in self.objects.get(self.page, []): self.scene.addItem(ObjectItem(obj, self))
+        entries = self.objects.get(self.page, [])
+        changed = {obj.source_id for obj in entries if obj.source_id}
+        for obj in self.existing_objects(page):
+            if obj.source_id not in changed:
+                self.scene.addItem(ObjectItem(obj, self))
+        for obj in entries:
+            if not obj.removed:
+                self.scene.addItem(ObjectItem(obj, self))
         self.page_label.setText(f"{self.path.name} · Page {self.page + 1} / {len(self.document)}")
         self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.loading = False
         self.show_properties()
+
+    def refresh_background(self):
+        with pdf.open(stream=self.document.tobytes()) as preview:
+            page = preview[self.page]
+            remove_originals(page, self.objects.get(self.page, []))
+            pix = page.get_pixmap(matrix=pdf.Matrix(1.5, 1.5), alpha=False)
+            image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888).copy()
+            self.background.setPixmap(QPixmap.fromImage(image))
+
+    def existing_objects(self, page):
+        if page.rotation or any(annot.type[0] == pdf.PDF_ANNOT_REDACT for annot in page.annots() or []):
+            return []
+        objects = []
+        blocks = page.get_text("dict")["blocks"]
+        original_boxes = {"Text": [], "Image": []}
+        for block in blocks:
+            if block["type"] == 0:
+                for line in block["lines"]:
+                    original_boxes["Text"].extend(pdf.Rect(span["bbox"]) for span in line["spans"] if span["text"].strip())
+            elif block["type"] == 1:
+                original_boxes["Image"].append(pdf.Rect(block["bbox"]))
+        for block_index, block in enumerate(blocks):
+            if block["type"] == 0:
+                for line_index, line in enumerate(block["lines"]):
+                    if tuple(line["dir"]) != (1.0, 0.0):
+                        continue
+                    for span_index, span in enumerate(line["spans"]):
+                        if not span["text"].strip():
+                            continue
+                        box = pdf.Rect(span["bbox"]) * page.rotation_matrix
+                        flags = span["flags"]
+                        font = span["font"].lower()
+                        family = "Mono" if flags & 8 else "Serif" if flags & 4 else "Sans"
+                        colors = ["#204c37", "#111111", "#225fbc", "#bc3434"]
+                        rgb = span["color"]
+                        color = min(colors, key=lambda value: sum((((rgb >> shift) & 255) - int(value[offset:offset + 2], 16)) ** 2 for shift, offset in ((16, 1), (8, 3), (0, 5))))
+                        origin = span["origin"]
+                        identity = f"{origin[0] + page.cropbox.x0:.1f}:{origin[1] + page.cropbox.y0:.1f}:{span['text']}"
+                        objects.append(Object("Text", tuple(box), text=span["text"], family=family,
+                                              size=max(6, min(144, round(span["size"]))), bold=bool(flags & 16) or "bold" in font,
+                                              italic=bool(flags & 2), color=color, source_rect=tuple(box),
+                                              source_id=f"t:{identity}", modified=False))
+            elif block["type"] == 1 and block.get("image"):
+                transform = block.get("transform", (1, 0, 0, 1, 0, 0))
+                if abs(transform[1]) > .001 or abs(transform[2]) > .001 or transform[0] <= 0 or transform[3] <= 0:
+                    continue
+                box = pdf.Rect(block["bbox"]) * page.rotation_matrix
+                image_data = block["image"]
+                if block.get("mask"):
+                    try:
+                        image_data = pdf.Pixmap(pdf.Pixmap(image_data), pdf.Pixmap(block["mask"])).tobytes("png")
+                    except (RuntimeError, ValueError):
+                        continue
+                identity = f"{box.x0 + page.cropbox.x0:.1f}:{box.y0 + page.cropbox.y0:.1f}:{box.width:.1f}:{box.height:.1f}"
+                objects.append(Object("Image", tuple(box), image_data=image_data, source_rect=tuple(box),
+                                      source_id=f"i:{identity}", modified=False))
+        safe = []
+        for obj in objects:
+            box = pdf.Rect(obj.source_rect)
+            if obj.kind == "Text":
+                box.y0 += box.height * .15
+                box.y1 -= box.height * .15
+            if sum(box.intersects(other) for other in original_boxes[obj.kind]) != 1:
+                continue
+            safe.append(obj)
+        return safe
 
     def selected(self):
         return next((item for item in self.scene.selectedItems() if isinstance(item, ObjectItem)), None)
@@ -193,6 +286,7 @@ class VisualEditor(QDialog):
         for control in (self.family, self.size, self.bold, self.italic):
             control.setEnabled(is_text)
         self.color.setEnabled(bool(item and item.obj.kind != "Image"))
+        self.replace_image.setVisible(bool(item and item.obj.kind == "Image"))
         if item:
             obj = item.obj
             self.text.setPlainText(obj.text)
@@ -211,6 +305,9 @@ class VisualEditor(QDialog):
         obj.text, obj.family, obj.size = self.text.toPlainText(), self.family.currentText(), self.size.value()
         obj.bold, obj.italic = self.bold.isChecked(), self.italic.isChecked()
         obj.color = ["#204c37", "#111111", "#225fbc", "#bc3434"][self.color.currentIndex()]
+        obj.modified = True
+        self.capture()
+        self.refresh_background()
         item.update()
 
     def add(self, kind, image=""):
@@ -227,12 +324,34 @@ class VisualEditor(QDialog):
         path, _ = QFileDialog.getOpenFileName(self, "Insert picture", "", "Pictures (*.png *.jpg *.jpeg *.bmp)")
         if path: self.add("Image", path)
 
+    def change_image(self):
+        item = self.selected()
+        if not item or item.obj.kind != "Image": return
+        path, _ = QFileDialog.getOpenFileName(self, "Replace picture", "", "Pictures (*.png *.jpg *.jpeg *.bmp)")
+        if not path: return
+        self.remember()
+        item.obj.image = path
+        item.obj.image_data = b""
+        item.obj.modified = True
+        item.image.load(path)
+        self.capture()
+        self.refresh_background()
+        item.update()
+
     def delete(self):
         if not self.selected(): return
         self.remember()
         for item in self.scene.selectedItems():
-            if isinstance(item, ObjectItem): self.scene.removeItem(item)
+            if isinstance(item, ObjectItem):
+                if item.obj.source_rect:
+                    item.obj.modified = True
+                    item.obj.removed = True
+                    entries = self.objects.setdefault(self.page, [])
+                    if not any(obj is item.obj for obj in entries):
+                        entries.append(item.obj)
+                self.scene.removeItem(item)
         self.capture()
+        self.refresh_background()
 
     def navigate(self, offset):
         self.capture()
@@ -251,6 +370,8 @@ class VisualEditor(QDialog):
         for obj in self.objects.get(self.page, []):
             r = pdf.Rect(obj.rect) + (delta.x, delta.y, delta.x, delta.y)
             obj.rect = tuple(r)
+            if obj.source_rect:
+                obj.source_rect = tuple(pdf.Rect(obj.source_rect) + (delta.x, delta.y, delta.x, delta.y))
         self.render()
 
     def save(self):
