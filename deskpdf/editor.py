@@ -7,13 +7,13 @@ from pathlib import Path
 import pymupdf as pdf
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap, QKeySequence, QShortcut
-from PySide6.QtWidgets import QCheckBox, QColorDialog, QComboBox, QDialog, QFileDialog, QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QDoubleSpinBox, QVBoxLayout, QWidget, QMessageBox
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QDialog, QFileDialog, QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QRadioButton, QDoubleSpinBox, QVBoxLayout, QWidget, QMessageBox
 
 from deskpdf.engine import open_document
 from deskpdf.crop_page import CropPageDialog
 
 
-from deskpdf.objects import Object, apply_related_forms, apply_objects, export_objects, remove_originals
+from deskpdf.objects import Object, apply_related_forms, apply_objects, decode_pdf_name, export_objects, remove_originals, selected_form_values
 
 
 class FormFieldItem(QGraphicsRectItem):
@@ -34,6 +34,8 @@ class FormFieldItem(QGraphicsRectItem):
         super().mouseReleaseEvent(event)
         if self.obj.form_type == pdf.PDF_WIDGET_TYPE_CHECKBOX and self.rect().contains(event.pos()):
             self.editor.set_form_value("Off" if self.editor.form_checked(self.obj) else self.obj.form_on)
+        elif self.obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON and self.rect().contains(event.pos()):
+            self.editor.set_form_value(self.obj.form_on)
 
     def mouseDoubleClickEvent(self, event):
         super().mouseDoubleClickEvent(event)
@@ -151,9 +153,14 @@ class VisualEditor(QDialog):
         self.form_multiline = QPlainTextEdit()
         self.form_multiline.setMaximumHeight(200)
         self.form_check = QCheckBox("Checked")
+        self.form_radio = QRadioButton("Selected")
+        self.form_radio.setAutoExclusive(False)
         self.form_choice = QComboBox()
         self.form_choice.setEditable(True)
-        for widget in (self.form_label, self.form_text, self.form_multiline, self.form_check, self.form_choice):
+        self.form_multi = QListWidget()
+        self.form_multi.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self.form_multi.setMaximumHeight(240)
+        for widget in (self.form_label, self.form_text, self.form_multiline, self.form_check, self.form_radio, self.form_choice, self.form_multi):
             form_controls.addWidget(widget)
         form_controls.addStretch()
         properties.addWidget(self.form_panel)
@@ -201,8 +208,10 @@ class VisualEditor(QDialog):
         self.form_text.textEdited.connect(self.set_form_value)
         self.form_multiline.textChanged.connect(lambda: self.set_form_value(self.form_multiline.toPlainText()))
         self.form_check.toggled.connect(self.set_form_checked)
+        self.form_radio.toggled.connect(self.set_form_checked)
         self.form_choice.currentIndexChanged.connect(lambda: self.set_form_value(self.form_choice.currentData()))
         self.form_choice.lineEdit().textEdited.connect(self.set_form_value)
+        self.form_multi.itemSelectionChanged.connect(self.set_multichoice)
         QShortcut(QKeySequence("Ctrl++"), self, activated=lambda: self.view.scale(1.15, 1.15))
         QShortcut(QKeySequence("Ctrl+-"), self, activated=lambda: self.view.scale(1 / 1.15, 1 / 1.15))
         QShortcut(QKeySequence("Ctrl+Z"), self, activated=self.undo)
@@ -295,21 +304,28 @@ class VisualEditor(QDialog):
             self.preview_fields = self.form_fields(page)
 
     def form_fields(self, page):
-        supported = {pdf.PDF_WIDGET_TYPE_TEXT, pdf.PDF_WIDGET_TYPE_CHECKBOX, pdf.PDF_WIDGET_TYPE_COMBOBOX, pdf.PDF_WIDGET_TYPE_LISTBOX}
+        supported = {pdf.PDF_WIDGET_TYPE_TEXT, pdf.PDF_WIDGET_TYPE_CHECKBOX, pdf.PDF_WIDGET_TYPE_RADIOBUTTON, pdf.PDF_WIDGET_TYPE_COMBOBOX, pdf.PDF_WIDGET_TYPE_LISTBOX}
         fields = []
         for widget in page.widgets() or []:
             if widget.field_type not in supported or widget.field_flags & pdf.PDF_FIELD_IS_READ_ONLY:
                 continue
-            if widget.field_type in (pdf.PDF_WIDGET_TYPE_COMBOBOX, pdf.PDF_WIDGET_TYPE_LISTBOX) and widget.field_flags & pdf.PDF_CH_FIELD_IS_MULTI_SELECT:
+            if widget.field_type == pdf.PDF_WIDGET_TYPE_COMBOBOX and widget.field_flags & pdf.PDF_CH_FIELD_IS_MULTI_SELECT:
                 continue
+            on_state = widget.on_state()
+            if widget.field_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON and on_state is None:
+                continue
+            if widget.field_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON and isinstance(on_state, str):
+                on_state = decode_pdf_name(on_state)
             box = tuple(widget.rect * page.rotation_matrix)
             parent_type, parent_value = page.parent.xref_get_key(widget.xref, "Parent")
+            if widget.field_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON and parent_type != "xref":
+                continue
             parent = int(parent_value.split()[0]) if parent_type == "xref" else widget.xref
             fields.append(Object("Form", box, source_rect=box, source_id=f"form:{widget.xref}", modified=False,
                                  form_xref=widget.xref, form_name=widget.field_name, form_label=widget.field_label or widget.field_name,
-                                 form_value=widget.field_value,
+                                 form_value=selected_form_values(widget) if widget.field_type == pdf.PDF_WIDGET_TYPE_LISTBOX and widget.field_flags & pdf.PDF_CH_FIELD_IS_MULTI_SELECT else widget.field_value,
                                  form_type=widget.field_type, form_flags=widget.field_flags,
-                                 form_choices=tuple(widget.choice_values or ()), form_on=widget.on_state(),
+                                 form_choices=tuple(widget.choice_values or ()), form_on=on_state,
                                  form_maxlen=widget.text_maxlen or 0, form_group=f"{parent}:{widget.field_name}"))
         return fields
 
@@ -387,14 +403,17 @@ class VisualEditor(QDialog):
         if is_form:
             obj = item.obj
             self.form_label.setText(obj.form_label or "Form field")
-            for control in (self.form_text, self.form_multiline, self.form_check, self.form_choice):
+            for control in (self.form_text, self.form_multiline, self.form_check, self.form_radio, self.form_choice, self.form_multi):
                 control.setAccessibleName(obj.form_label or "Form field")
             is_text = obj.form_type == pdf.PDF_WIDGET_TYPE_TEXT
             multiline = is_text and bool(obj.form_flags & pdf.PDF_TX_FIELD_IS_MULTILINE) and not obj.form_flags & pdf.PDF_TX_FIELD_IS_PASSWORD
             self.form_text.setVisible(is_text and not multiline)
             self.form_multiline.setVisible(multiline)
             self.form_check.setVisible(obj.form_type == pdf.PDF_WIDGET_TYPE_CHECKBOX)
-            self.form_choice.setVisible(obj.form_type in (pdf.PDF_WIDGET_TYPE_COMBOBOX, pdf.PDF_WIDGET_TYPE_LISTBOX))
+            self.form_radio.setVisible(obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON)
+            multi = obj.form_type == pdf.PDF_WIDGET_TYPE_LISTBOX and bool(obj.form_flags & pdf.PDF_CH_FIELD_IS_MULTI_SELECT)
+            self.form_multi.setVisible(multi)
+            self.form_choice.setVisible(obj.form_type in (pdf.PDF_WIDGET_TYPE_COMBOBOX, pdf.PDF_WIDGET_TYPE_LISTBOX) and not multi)
             if is_text:
                 self.form_text.setEchoMode(QLineEdit.EchoMode.Password if obj.form_flags & pdf.PDF_TX_FIELD_IS_PASSWORD else QLineEdit.EchoMode.Normal)
                 self.form_text.setMaxLength(obj.form_maxlen or 32767)
@@ -402,6 +421,16 @@ class VisualEditor(QDialog):
                 self.form_multiline.setPlainText(str(obj.form_value or ""))
             elif obj.form_type == pdf.PDF_WIDGET_TYPE_CHECKBOX:
                 self.form_check.setChecked(self.form_checked(obj))
+            elif obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+                self.form_radio.setChecked(self.form_checked(obj))
+            elif multi:
+                self.form_multi.clear()
+                for choice in obj.form_choices:
+                    value, title = choice if isinstance(choice, (list, tuple)) and len(choice) == 2 else (choice, choice)
+                    row = QListWidgetItem(str(title))
+                    row.setData(Qt.ItemDataRole.UserRole, value)
+                    self.form_multi.addItem(row)
+                    row.setSelected(value in obj.form_value)
             else:
                 self.form_choice.clear()
                 editable = bool(obj.form_flags & pdf.PDF_CH_FIELD_IS_EDIT)
@@ -435,12 +464,25 @@ class VisualEditor(QDialog):
 
     @staticmethod
     def form_checked(obj):
+        if obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+            return obj.form_value == obj.form_on and obj.form_on not in (None, "Off")
         return obj.form_value not in (None, "", "Off", False)
 
     def set_form_checked(self, checked):
+        if self.loading:
+            return
         item = self.selected()
         if isinstance(item, FormFieldItem):
+            if item.obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON and not checked:
+                self.loading = True
+                self.form_radio.setChecked(self.form_checked(item.obj))
+                self.loading = False
+                return
             self.set_form_value(item.obj.form_on if checked else "Off")
+
+    def set_multichoice(self):
+        self.set_form_value(tuple(self.form_multi.item(index).data(Qt.ItemDataRole.UserRole)
+                                  for index in range(self.form_multi.count()) if self.form_multi.item(index).isSelected()))
 
     def set_form_value(self, value):
         item = self.selected()
@@ -463,13 +505,14 @@ class VisualEditor(QDialog):
         item.obj.form_seq = time.monotonic_ns()
         for sibling in self.scene.items():
             if isinstance(sibling, FormFieldItem) and sibling is not item and sibling.obj.form_group == item.obj.form_group:
-                sibling.obj.form_value = value
+                sibling.obj.form_value = "Off" if item.obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON and sibling.obj.form_on != value else value
                 sibling.obj.modified = False
         self.capture()
         self.refresh_background()
-        if item.obj.form_type == pdf.PDF_WIDGET_TYPE_CHECKBOX:
+        if item.obj.form_type in (pdf.PDF_WIDGET_TYPE_CHECKBOX, pdf.PDF_WIDGET_TYPE_RADIOBUTTON):
             self.loading = True
-            self.form_check.setChecked(self.form_checked(item.obj))
+            control = self.form_radio if item.obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON else self.form_check
+            control.setChecked(self.form_checked(item.obj))
             self.loading = False
 
     def set_color(self, color):

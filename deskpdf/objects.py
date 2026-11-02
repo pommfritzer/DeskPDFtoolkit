@@ -33,6 +33,25 @@ class Object:
     removed: bool = False
 
 
+def decode_pdf_name(value):
+    data = bytearray()
+    index = 0
+    while index < len(value):
+        if value[index] == "#" and index + 2 < len(value):
+            try:
+                data.append(int(value[index + 1:index + 3], 16))
+                index += 3
+                continue
+            except ValueError:
+                pass
+        data.extend(value[index].encode("utf-8"))
+        index += 1
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
+
+
 def remove_originals(page, entries):
     for kind in ("Text", "Image"):
         originals = [obj for obj in entries if obj.kind == kind and obj.source_rect and obj.modified]
@@ -49,6 +68,72 @@ def remove_originals(page, entries):
                               text=pdf.PDF_REDACT_TEXT_REMOVE if kind == "Text" else pdf.PDF_REDACT_TEXT_NONE)
 
 
+def selected_form_values(widget):
+    document = widget.parent.parent
+    mupdf = pdf.mupdf
+    # PyMuPDF's Widget.field_value does not expose multi-select PDF arrays.
+    field = mupdf.pdf_load_object(pdf._as_pdf_document(document), widget.xref)
+    value = mupdf.pdf_dict_get_inheritable(field, mupdf.pdf_new_name("V"))
+    if mupdf.pdf_is_array(value):
+        values = [mupdf.pdf_array_get(value, index) for index in range(mupdf.pdf_array_len(value))]
+        return tuple(mupdf.pdf_to_name(item) if mupdf.pdf_is_name(item) else mupdf.pdf_to_text_string(item) for item in values)
+    return (widget.field_value,) if widget.field_value else ()
+
+
+def field_value_owner(document, xref):
+    owner = xref
+    while document.xref_get_key(owner, "V")[0] == "null":
+        if document.xref_get_key(owner, "T")[0] != "null":
+            break
+        kind, parent = document.xref_get_key(owner, "Parent")
+        if kind != "xref":
+            break
+        owner = int(parent.split()[0])
+    return owner
+
+
+def apply_multichoice(document, index, widget, obj):
+    choices = [(choice[0], choice[1]) if isinstance(choice, (list, tuple)) and len(choice) == 2 else (choice, choice)
+               for choice in obj.form_choices]
+    selected = set(obj.form_value)
+    indexes = [number for number, (value, _) in enumerate(choices) if value in selected]
+    widget.field_value = ""
+    widget.update()
+    owner = field_value_owner(document, widget.xref)
+    document.xref_set_key(owner, "V", "[" + " ".join(pdf.get_pdf_str(str(choices[number][0])) for number in indexes) + "]" if indexes else "null")
+    document.xref_set_key(owner, "I", "[" + " ".join(str(number) for number in indexes) + "]" if indexes else "null")
+    if not indexes:
+        return
+    kind, appearance = document.xref_get_key(widget.xref, "AP/N")
+    if kind != "xref":
+        return
+    appearance_xref = int(appearance.split()[0])
+    labels = {str(choices[number][1]) for number in indexes}
+    with pdf.open() as isolated:
+        isolated.insert_pdf(document, from_page=index, to_page=index, links=False)
+        page = isolated[0]
+        blank = isolated.get_new_xref()
+        isolated.update_object(blank, "<<>>")
+        isolated.update_stream(blank, b"")
+        page.set_contents(blank)
+        lines = [line for block in page.get_text("dict", clip=widget.rect)["blocks"] if block["type"] == 0
+                 for line in block["lines"] if "".join(span["text"] for span in line["spans"]).strip() in labels]
+    if not lines:
+        return
+    state = document.get_new_xref()
+    document.update_object(state, "<</Type /ExtGState /ca 0.2 /CA 0.2>>")
+    if document.xref_get_key(appearance_xref, "Resources/ExtGState")[0] == "null":
+        document.xref_set_key(appearance_xref, "Resources/ExtGState", "<<>>")
+    document.xref_set_key(appearance_xref, "Resources/ExtGState/DeskPDFSelection", f"{state} 0 R")
+    overlay = ["q /DeskPDFSelection gs 0.18 0.55 0.33 rg"]
+    for line in lines:
+        box = pdf.Rect(line["bbox"]) & widget.rect
+        # Widget appearance streams use a bottom-left origin inside the field.
+        overlay.append(f"0 {widget.rect.y1 - box.y1:.4f} {widget.rect.width:.4f} {box.height:.4f} re f")
+    overlay.append("Q")
+    document.update_stream(appearance_xref, document.xref_stream(appearance_xref) + ("\n" + "\n".join(overlay) + "\n").encode("ascii"))
+
+
 def apply_form_values(document, index, entries):
     page = document[index]
     for obj in entries:
@@ -57,17 +142,19 @@ def apply_form_values(document, index, entries):
         widget = page.load_widget(obj.form_xref)
         if widget is None or widget.field_name != obj.form_name:
             raise ValueError(f"Could not find form field {obj.form_name!r} on page {index + 1}.")
+        if obj.form_type == pdf.PDF_WIDGET_TYPE_LISTBOX and obj.form_flags & pdf.PDF_CH_FIELD_IS_MULTI_SELECT:
+            apply_multichoice(document, index, widget, obj)
+            continue
         display = next((choice[1] for choice in obj.form_choices if isinstance(choice, (list, tuple)) and len(choice) == 2 and choice[0] == obj.form_value), None)
         widget.field_value = display if display is not None else obj.form_value
         widget.update()
+        if obj.form_type == pdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+            owner = field_value_owner(document, widget.xref)
+            field = pdf.mupdf.pdf_load_object(pdf._as_pdf_document(document), owner)
+            pdf.mupdf.pdf_dict_puts(field, "V", pdf.mupdf.pdf_new_name(str(obj.form_value)))
         if display is not None:
             # The widget appearance uses the label; the stored PDF value must remain the export value.
-            owner = widget.xref
-            while document.xref_get_key(owner, "V")[0] == "null":
-                kind, parent = document.xref_get_key(owner, "Parent")
-                if kind != "xref":
-                    break
-                owner = int(parent.split()[0])
+            owner = field_value_owner(document, widget.xref)
             document.xref_set_key(owner, "V", pdf.get_pdf_str(str(obj.form_value)))
     return document[index] if any(obj.kind == "Form" for obj in entries) else page
 

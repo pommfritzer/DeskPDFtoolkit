@@ -67,6 +67,70 @@ def numeric(options, name, default, minimum, maximum):
         raise ToolError(f"{name.capitalize()} must be between {minimum:g} and {maximum:g}.") from None
 
 
+def hidden_form_paths(document):
+    mupdf = pdf.mupdf
+    catalog = mupdf.pdf_load_object(pdf._as_pdf_document(document), document.pdf_catalog())
+    form = mupdf.pdf_dict_gets(catalog, "AcroForm")
+    roots = mupdf.pdf_dict_gets(form, "Fields")
+    paths = []
+
+    def visit(field, ancestors):
+        xref = mupdf.pdf_to_num(field)
+        if not xref:
+            raise ToolError("This PDF contains a direct form-field dictionary that cannot be safely rearranged.")
+        if xref in ancestors:
+            raise ToolError("This PDF contains a circular form-field hierarchy.")
+        path = (*ancestors, xref)
+        kids = mupdf.pdf_dict_gets(field, "Kids")
+        if mupdf.pdf_array_len(kids):
+            for index in range(mupdf.pdf_array_len(kids)):
+                visit(mupdf.pdf_array_get(kids, index), path)
+        elif mupdf.pdf_to_name(mupdf.pdf_dict_gets(field, "Subtype")) != "Widget":
+            paths.append(path)
+
+    for index in range(mupdf.pdf_array_len(roots)):
+        visit(mupdf.pdf_array_get(roots, index), ())
+    return paths
+
+
+def select_pages(document, pages):
+    catalog = document.pdf_catalog()
+    acroform_type, acroform = document.xref_get_key(catalog, "AcroForm")
+    hidden_paths = hidden_form_paths(document)
+    document.select(pages)
+    roots = set()
+    children = {}
+    for page in document:
+        for widget in page.widgets() or []:
+            child = widget.xref
+            visited = set()
+            while True:
+                if child in visited:
+                    raise ToolError("This PDF contains a circular form-field hierarchy.")
+                visited.add(child)
+                kind, value = document.xref_get_key(child, "Parent")
+                if kind != "xref":
+                    roots.add(child)
+                    break
+                parent = int(value.split()[0])
+                children.setdefault(parent, set()).add(child)
+                child = parent
+    for path in hidden_paths:
+        roots.add(path[0])
+        for parent, child in zip(path, path[1:]):
+            children.setdefault(parent, set()).add(child)
+    if acroform_type == "null" and not roots:
+        return
+    document.xref_set_key(catalog, "AcroForm", acroform if acroform_type in ("dict", "xref") else "<<>>")
+    for parent, kids in children.items():
+        document.xref_set_key(parent, "Kids", "[" + " ".join(f"{kid} 0 R" for kid in sorted(kids)) + "]")
+    fields = "[" + " ".join(f"{root} 0 R" for root in sorted(roots)) + "]"
+    if acroform_type == "xref":
+        document.xref_set_key(int(acroform.split()[0]), "Fields", fields)
+    else:
+        document.xref_set_key(catalog, "AcroForm/Fields", fields)
+
+
 def run_tool(tool: str, paths: list[Path], destination: Path, options: dict) -> Path:
     if not paths:
         raise ToolError("Choose at least one file first.")
@@ -145,7 +209,7 @@ def merge_grouped(document, paths, selections, crops, edits, options, password):
                 for index in indexes:
                     if first <= index <= last:
                         page_map[(path, index)] = offset + index - first
-    document.select([page_map[(path, index)] for path, index in pages])
+    select_pages(document, [page_map[(path, index)] for path, index in pages])
     return True
 
 
@@ -187,7 +251,7 @@ def _process(tool, paths, target, options):
 
             def select_source_pages(source, expression, path):
                 try:
-                    source.select(parse_pages(expression, len(source)))
+                    select_pages(source, parse_pages(expression, len(source)))
                 except ToolError as error:
                     raise ToolError(f"{path.name}: {error}") from None
 
@@ -239,12 +303,12 @@ def _process(tool, paths, target, options):
                         select_source_pages(source, expression, path)
                         document.insert_pdf(source)
         elif tool in {"extract", "reorder"}:
-            document.select(pages)
+            select_pages(document, pages)
         elif tool == "delete":
             keep = [index for index in range(len(document)) if index not in pages]
             if not keep:
                 raise ToolError("Keep at least one page in the document.")
-            document.select(keep)
+            select_pages(document, keep)
         elif tool in {"split", "pdf_to_png"}:
             dpi = numeric(options, "dpi", 144, 72, 300)
             with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:

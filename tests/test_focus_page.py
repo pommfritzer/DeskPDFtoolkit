@@ -1,5 +1,6 @@
 from pathlib import Path
 import pymupdf as pdf
+import pytest
 from PySide6.QtCore import Qt
 from deskpdf.focus_page import PageFocus
 from deskpdf.merge_view import MergeView
@@ -548,7 +549,7 @@ def make_linked_form(source):
         for child in kids:
             doc.xref_set_key(child, "Parent", f"{parent} 0 R")
             for key in ("T", "FT", "V"):
-                doc.xref_set_key(child, key, "null")
+                pdf.mupdf.pdf_dict_dels(pdf.mupdf.pdf_load_object(pdf._as_pdf_document(doc), child), key)
         doc.xref_set_key(doc.pdf_catalog(), "AcroForm/Fields", f"[{parent} 0 R]")
         doc.save(source)
 
@@ -716,3 +717,412 @@ def test_merge_copies_only_selected_pages_from_unconnected_source(tmp_path, monk
     assert copied == [(0, 0), (11, 11)]
     with pdf.open(output) as doc:
         assert [page.get_text().strip() for page in doc][1:] == ["Page 1", "Page 12"]
+
+def make_radio_form(source, across_pages=False):
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        kids = []
+        for index, name in enumerate(("Alpha", "Beta")):
+            if index and across_pages:
+                page = doc.new_page(width=400, height=500)
+            widget = pdf.Widget()
+            widget.field_type = pdf.PDF_WIDGET_TYPE_CHECKBOX
+            widget.field_name = f"temporary{index}"
+            widget.rect = pdf.Rect(40 + (0 if across_pages else index * 50), 60, 60 + (0 if across_pages else index * 50), 80)
+            widget.field_value = False
+            xref = page.add_widget(widget).xref
+            kids.append(xref)
+            on = doc.xref_get_key(xref, "AP/N/Yes")[1]
+            off = doc.xref_get_key(xref, "AP/N/Off")[1]
+            doc.xref_set_key(xref, "AP/N", f"<</Off {off} /{name} {on}>>")
+            doc.xref_set_key(xref, "AS", f"/{name}" if index == 0 else "/Off")
+        parent = doc.get_new_xref()
+        doc.update_object(parent, f"<</FT /Btn /Ff {pdf.PDF_BTN_FIELD_IS_RADIO} /T (Group) /V /Alpha /Kids [{kids[0]} 0 R {kids[1]} 0 R]>>")
+        for child in kids:
+            doc.xref_set_key(child, "Parent", f"{parent} 0 R")
+            for key in ("T", "FT", "V", "Ff"):
+                pdf.mupdf.pdf_dict_dels(pdf.mupdf.pdf_load_object(pdf._as_pdf_document(doc), child), key)
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm/Fields", f"[{parent} 0 R]")
+        doc.save(source)
+
+
+def test_radio_group_selection_undo_and_save_in_focus(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from PySide6.QtTest import QTest
+    source = tmp_path / "radio.pdf"
+    make_radio_form(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.show()
+    application_session.processEvents()
+    fields = {item.obj.form_on: item for item in focus.scene.items() if isinstance(item, FormFieldItem)}
+    assert focus.form_checked(fields["Alpha"].obj)
+    assert not focus.form_checked(fields["Beta"].obj)
+    fields["Alpha"].setSelected(True)
+    assert focus.form_radio.isChecked()
+    focus.scene.clearSelection()
+    fields["Beta"].setSelected(True)
+    assert not focus.form_radio.isChecked()
+    assert not focus.dirty
+    point = focus.view.mapFromScene(fields["Beta"].rect().center())
+    QTest.mouseClick(focus.view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert focus.form_checked(fields["Beta"].obj)
+    assert not focus.form_checked(fields["Alpha"].obj)
+    assert focus.form_radio.isChecked()
+    focus.undo()
+    states = {item.obj.form_on: focus.form_checked(item.obj) for item in focus.scene.items() if isinstance(item, FormFieldItem)}
+    assert states == {"Alpha": True, "Beta": False}
+    focus.redo()
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "radio-filled.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        widgets = list(page.widgets())
+        assert [(w.on_state(), w.field_value) for w in widgets] == [("Alpha", "Off"), ("Beta", "Beta")]
+        assert [doc.xref_get_key(w.xref, "AS")[1] for w in widgets] == ["/Off", "/Beta"]
+        parent = int(doc.xref_get_key(widgets[0].xref, "Parent")[1].split()[0])
+        assert doc.xref_get_key(parent, "V") == ("name", "/Beta")
+    with pdf.open(source) as doc:
+        assert [(w.on_state(), w.field_value) for w in doc[0].widgets()] == [("Alpha", "Alpha"), ("Beta", "Off")]
+    workspace.close()
+
+def test_radio_group_remains_linked_across_merged_pages(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    source = tmp_path / "radios.pdf"
+    make_radio_form(source, across_pages=True)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    workspace.select_all(True)
+    focus = PageFocus(workspace, 1)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    item.setSelected(True)
+    focus.form_radio.setChecked(True)
+    focus.navigate(-1)
+    first = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    assert not focus.form_checked(first.obj)
+    focus.close()
+    selected = workspace.selection()
+    related = [(path, page, obj) for (path, page), entries in workspace.edits.items() for obj in entries if obj.kind == "Form"]
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [Path(path) for path, number in selected], output, {
+        "merge_pages": [str(number + 1) for path, number in selected],
+        "merge_crops": [workspace.crops.get(key) for key in selected],
+        "merge_edits": [workspace.edits.get(key, []) for key in selected],
+        "merge_form_edits": related,
+    })
+    with pdf.open(output) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Off", "Beta"]
+        first_page = doc[0]
+        first = next(first_page.widgets())
+        first.field_value = first.on_state()
+        first.update()
+        updated = tmp_path / "updated.pdf"
+        doc.save(updated)
+    with pdf.open(updated) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Alpha", "Off"]
+    workspace.close()
+
+def test_page_tools_preserve_acroform_catalog_and_radio_hierarchy(tmp_path):
+    from deskpdf.engine import run_tool
+    source = tmp_path / "radios.pdf"
+    make_radio_form(source, across_pages=True)
+    with pdf.open(source) as doc:
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm/NeedAppearances", "true")
+        updated = tmp_path / "with-options.pdf"
+        doc.save(updated)
+    for tool, options in (("extract", {"pages": "2,1"}), ("reorder", {"pages": "2,1"}), ("delete", {"pages": "1"}), ("merge", {"merge_pages": ["2,1"]})):
+        output = tmp_path / f"{tool}.pdf"
+        run_tool(tool, [updated], output, options)
+        with pdf.open(output) as doc:
+            assert doc.xref_get_key(doc.pdf_catalog(), "AcroForm/Fields")[0] == "array"
+            assert doc.xref_get_key(doc.pdf_catalog(), "AcroForm/NeedAppearances") == ("bool", "true")
+            widgets = [(page.number, widget.xref) for page in doc for widget in page.widgets()]
+            assert len(widgets) == len(doc)
+            parent = int(doc.xref_get_key(widgets[0][1], "Parent")[1].split()[0])
+            parent_kids = doc.xref_get_key(parent, "Kids")[1]
+            for _, xref in widgets:
+                assert f"{xref} 0 R" in parent_kids
+            assert len(parent_kids.split("R")) - 1 == len(widgets)
+
+def make_multiselect_form(source):
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        widget = pdf.Widget()
+        widget.field_type = pdf.PDF_WIDGET_TYPE_LISTBOX
+        widget.field_flags = pdf.PDF_CH_FIELD_IS_MULTI_SELECT
+        widget.field_name = "Colors"
+        widget.choice_values = ["Red", "Green", "Blue"]
+        widget.rect = pdf.Rect(40, 60, 200, 140)
+        xref = page.add_widget(widget).xref
+        doc.xref_set_key(xref, "V", "[(Green)]")
+        doc.xref_set_key(xref, "I", "[1]")
+        doc.save(source)
+
+
+def test_multiselect_list_in_focus_preserves_values_and_appearance(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from deskpdf.objects import selected_form_values
+    source = tmp_path / "multi.pdf"
+    make_multiselect_form(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    field = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    assert field.obj.form_value == ("Green",)
+    field.setSelected(True)
+    assert [item.text() for item in focus.form_multi.selectedItems()] == ["Green"]
+    focus.form_multi.item(1).setSelected(False)
+    focus.form_multi.item(0).setSelected(True)
+    focus.form_multi.item(2).setSelected(True)
+    assert field.obj.form_value == ("Red", "Blue")
+    focus.undo()
+    assert next(item.obj.form_value for item in focus.scene.items() if isinstance(item, FormFieldItem)) == ("Red",)
+    focus.redo()
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        widget = next(page.widgets())
+        assert selected_form_values(widget) == ("Red", "Blue")
+        assert doc.xref_get_key(widget.xref, "I") == ("array", "[0 2]")
+        appearance = int(doc.xref_get_key(widget.xref, "AP/N")[1].split()[0])
+        stream = doc.xref_stream(appearance)
+        assert b"/DeskPDFSelection gs" in stream
+        assert stream.count(b" re f") == 2
+        assert {"Red", "Green", "Blue"} <= set(page.get_text().split())
+    with pdf.open(source) as doc:
+        assert selected_form_values(next(doc[0].widgets())) == ("Green",)
+    workspace.close()
+
+def test_multiselect_export_values_and_clear(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from deskpdf.objects import selected_form_values
+    source = tmp_path / "languages.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page()
+        widget = pdf.Widget()
+        widget.field_type = pdf.PDF_WIDGET_TYPE_LISTBOX
+        widget.field_flags = pdf.PDF_CH_FIELD_IS_MULTI_SELECT
+        widget.field_name = "Languages"
+        widget.choice_values = ["de", "fr", "it"]
+        widget.rect = pdf.Rect(40, 60, 220, 140)
+        xref = page.add_widget(widget).xref
+        doc.xref_set_key(xref, "Opt", "[[(de)(German)] [(fr)(French)] [(it)(Italian)]]")
+        doc.xref_set_key(xref, "V", "[(fr)]")
+        doc.xref_set_key(xref, "I", "[1]")
+        doc.new_page()
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    field = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    field.setSelected(True)
+    assert [item.text() for item in focus.form_multi.selectedItems()] == ["French"]
+    focus.form_multi.item(0).setSelected(True)
+    assert field.obj.form_value == ("de", "fr")
+    focus.navigate(1)
+    focus.navigate(-1)
+    field = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    field.setSelected(True)
+    assert {item.text() for item in focus.form_multi.selectedItems()} == {"German", "French"}
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "selected.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        widget = next(page.widgets())
+        assert selected_form_values(widget) == ("de", "fr")
+        appearance = int(doc.xref_get_key(widget.xref, "AP/N")[1].split()[0])
+        assert doc.xref_stream(appearance).count(b" re f") == 2
+    focus = PageFocus(workspace, 0)
+    field = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    field.setSelected(True)
+    for item in list(focus.form_multi.selectedItems()):
+        item.setSelected(False)
+    focus.close()
+    cleared = tmp_path / "cleared.pdf"
+    run_tool("merge", [source], cleared, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(cleared) as doc:
+        page = doc[0]
+        widget = next(page.widgets())
+        assert selected_form_values(widget) == ()
+        assert doc.xref_get_key(widget.xref, "V")[0] == "null"
+        assert doc.xref_get_key(widget.xref, "I")[0] == "null"
+    workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_multiselect_on_rotated_cropped_page(tmp_path, application_session, rotation):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from deskpdf.objects import selected_form_values
+    original = tmp_path / "original.pdf"
+    make_multiselect_form(original)
+    source = tmp_path / "cropped.pdf"
+    with pdf.open(original) as doc:
+        doc[0].set_cropbox(pdf.Rect(20, 20, 380, 480))
+        doc[0].set_rotation(rotation)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    item.setSelected(True)
+    focus.form_multi.item(0).setSelected(True)
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        assert page.rotation == rotation
+        widget = next(page.widgets())
+        assert selected_form_values(widget) == ("Red", "Green")
+        appearance = int(doc.xref_get_key(widget.xref, "AP/N")[1].split()[0])
+        assert doc.xref_stream(appearance).count(b" re f") == 2
+    workspace.close()
+
+def test_page_selection_preserves_indirect_acroform_resources(tmp_path):
+    from deskpdf.engine import run_tool
+    source = tmp_path / "form.pdf"
+    make_linked_form(source)
+    indirect = tmp_path / "indirect.pdf"
+    with pdf.open(source) as doc:
+        kind, value = doc.xref_get_key(doc.pdf_catalog(), "AcroForm")
+        assert kind == "dict"
+        xref = doc.get_new_xref()
+        doc.update_object(xref, value)
+        doc.xref_set_key(xref, "NeedAppearances", "true")
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm", f"{xref} 0 R")
+        doc.save(indirect)
+    output = tmp_path / "extracted.pdf"
+    run_tool("extract", [indirect], output, {"pages": "2,1"})
+    with pdf.open(output) as doc:
+        assert doc.xref_get_key(doc.pdf_catalog(), "AcroForm")[0] == "xref"
+        assert doc.xref_get_key(doc.pdf_catalog(), "AcroForm/NeedAppearances") == ("bool", "true")
+        assert doc.xref_get_key(doc.pdf_catalog(), "AcroForm/Fields")[0] == "array"
+        page = doc[0]
+        widget = next(page.widgets())
+        widget.field_value = "Linked"
+        widget.update()
+        changed = tmp_path / "changed.pdf"
+        doc.save(changed)
+    with pdf.open(changed) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Linked", "Linked"]
+
+def test_multiselect_preserves_other_fields_in_parent_hierarchy(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from deskpdf.objects import selected_form_values
+    source = tmp_path / "nested.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page()
+        kids = []
+        for kind, name, top in ((pdf.PDF_WIDGET_TYPE_LISTBOX, "Languages", 60), (pdf.PDF_WIDGET_TYPE_TEXT, "City", 180)):
+            widget = pdf.Widget()
+            widget.field_type = kind
+            widget.field_name = name
+            widget.rect = pdf.Rect(40, top, 200, top + 80)
+            if kind == pdf.PDF_WIDGET_TYPE_LISTBOX:
+                widget.field_flags = pdf.PDF_CH_FIELD_IS_MULTI_SELECT
+                widget.choice_values = ["German", "French"]
+            else:
+                widget.field_value = "Zurich"
+            kids.append(page.add_widget(widget).xref)
+        parent = doc.get_new_xref()
+        doc.update_object(parent, f"<</T (Person) /Kids [{kids[0]} 0 R {kids[1]} 0 R]>>")
+        for kid in kids:
+            doc.xref_set_key(kid, "Parent", f"{parent} 0 R")
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm/Fields", f"[{parent} 0 R]")
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    field = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem) and item.obj.form_type == pdf.PDF_WIDGET_TYPE_LISTBOX)
+    field.setSelected(True)
+    focus.form_multi.item(0).setSelected(True)
+    focus.form_multi.item(1).setSelected(True)
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        fields = {widget.field_type: widget for widget in page.widgets()}
+        assert selected_form_values(fields[pdf.PDF_WIDGET_TYPE_LISTBOX]) == ("German", "French")
+        assert fields[pdf.PDF_WIDGET_TYPE_TEXT].field_value == "Zurich"
+        parent_type, parent_ref = doc.xref_get_key(fields[pdf.PDF_WIDGET_TYPE_LISTBOX].xref, "Parent")
+        assert parent_type == "xref"
+        assert doc.xref_get_key(int(parent_ref.split()[0]), "V")[0] == "null"
+    workspace.close()
+
+def test_page_selection_preserves_hidden_form_values(tmp_path):
+    from deskpdf.engine import run_tool
+    source = tmp_path / "form.pdf"
+    make_linked_form(source)
+    hidden = tmp_path / "hidden.pdf"
+    with pdf.open(source) as doc:
+        existing = doc.xref_get_key(doc.pdf_catalog(), "AcroForm/Fields")[1].strip("[]")
+        parent = doc.get_new_xref()
+        child = doc.get_new_xref()
+        doc.update_object(parent, f"<</T (Metadata) /Kids [{child} 0 R]>>")
+        doc.update_object(child, f"<</FT /Tx /T (Reference) /V (KEEP-42) /Parent {parent} 0 R>>")
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm/Fields", f"[{existing} {parent} 0 R]")
+        doc.save(hidden)
+    output = tmp_path / "output.pdf"
+    run_tool("extract", [hidden], output, {"pages": "2"})
+    with pdf.open(output) as doc:
+        catalog_fields = doc.xref_get_key(doc.pdf_catalog(), "AcroForm/Fields")[1]
+        roots = [int(token) for token in catalog_fields.replace("0 R", "").strip("[]").split()]
+        metadata = next(xref for xref in roots if doc.xref_get_key(xref, "T") == ("string", "Metadata"))
+        kids = doc.xref_get_key(metadata, "Kids")[1]
+        field = int(kids.strip("[]").split()[0])
+        assert doc.xref_get_key(field, "V") == ("string", "KEEP-42")
+
+def test_radio_option_with_escaped_pdf_name(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    original = tmp_path / "original.pdf"
+    source = tmp_path / "special.pdf"
+    make_radio_form(original)
+    with pdf.open(original) as doc:
+        page = doc[0]
+        widget = list(page.widgets())[1]
+        on = doc.xref_get_key(widget.xref, "AP/N/Beta")[1]
+        off = doc.xref_get_key(widget.xref, "AP/N/Off")[1]
+        doc.xref_set_key(widget.xref, "AP/N", f"<</Off {off} /Beta#20Choice {on}>>")
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem) and item.obj.form_on == "Beta Choice")
+    item.setSelected(True)
+    focus.form_radio.setChecked(True)
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        widget = list(page.widgets())[1]
+        assert widget.field_value == "Beta Choice"
+        assert doc.xref_get_key(widget.xref, "AS") == ("name", "/Beta Choice")
+        parent = int(doc.xref_get_key(widget.xref, "Parent")[1].split()[0])
+        assert doc.xref_get_key(parent, "V") == ("name", "/Beta Choice")
+    reopened = MergeView()
+    reopened.refresh([output], "")
+    focus = PageFocus(reopened, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem) and item.obj.form_on == "Beta Choice")
+    assert focus.form_checked(item.obj)
+    focus.close()
+    reopened.close()
+    workspace.close()
