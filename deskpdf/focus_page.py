@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QCheckBox, QPushButton
 
 from deskpdf.editor import VisualEditor
 from deskpdf.engine import open_document
+from deskpdf.objects import apply_related_forms
 
 
 class PageFocus(VisualEditor):
@@ -50,6 +51,12 @@ class PageFocus(VisualEditor):
         self.capture()
         key = self.workspace.pages.item(self.row).data(Qt.ItemDataRole.UserRole)
         self.workspace.edits[key] = copy.deepcopy(self.objects.get(self.page, []))
+        current_forms = [obj for obj in self.workspace.edits[key] if obj.kind == "Form"]
+        for other_key, entries in self.workspace.edits.items():
+            if other_key == key or other_key[0] != key[0]:
+                continue
+            self.workspace.edits[other_key] = [obj for obj in entries if obj.kind != "Form" or not any(
+                latest.form_group == obj.form_group and latest.form_seq > obj.form_seq for latest in current_forms)]
         self.workspace.crops[key] = tuple(self.document[self.page].cropbox)
         if self.dirty:
             self.workspace.edits_dirty = True
@@ -61,6 +68,9 @@ class PageFocus(VisualEditor):
         if not self.document.is_closed:
             self.document.close()
         self.document = open_document(Path(path), self.workspace.password)
+        related = [(page, obj) for (source, page), entries in self.workspace.edits.items() if source == path
+                   for obj in entries if obj.kind == "Form"]
+        apply_related_forms(self.document, related)
         self.path = Path(path)
         self.page = number
         key = (path, number)

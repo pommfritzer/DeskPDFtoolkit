@@ -119,3 +119,15 @@ def test_ui_scale_and_password_disclosure():
     window.scale_ui(reset=True)
     assert not window.centralWidget().timer.isActive()
     window.close()
+
+def test_form_tool_offers_visual_editor(application_session, monkeypatch):
+    from PySide6.QtWidgets import QPushButton
+    from deskpdf.catalog import TOOL_BY_ID
+    window = Window()
+    calls = []
+    monkeypatch.setattr(window, "open_visual_editor", lambda: calls.append(True))
+    window.select_tool(TOOL_BY_ID["forms"])
+    action = next(button for button in window.options_panel.findChildren(QPushButton) if button.text() == "Fill visually…")
+    action.click()
+    assert calls == [True]
+    window.close()

@@ -286,14 +286,17 @@ class MergeView(QWidget):
                 continue
             try:
                 with open_document(path, self.password) as document:
+                    from deskpdf.objects import apply_objects, apply_related_forms
+                    related = [(page, obj) for (source, page), entries in self.edits.items() if source == str(path)
+                               for obj in entries if obj.kind == "Form"]
+                    apply_related_forms(document, related)
                     for item in items:
                         key = item.data(Qt.ItemDataRole.UserRole)
                         page = document[key[1]]
                         if key in self.crops:
                             page.set_cropbox(pdf.Rect(self.crops[key]))
-                        from deskpdf.objects import apply_objects
-                        apply_objects(document, {key[1]: self.edits.get(key, [])})
-                        item.setIcon(self.page_icon(page))
+                        apply_objects(document, {key[1]: [obj for obj in self.edits.get(key, []) if obj.kind != "Form"]})
+                        item.setIcon(self.page_icon(document[key[1]]))
             except Exception as error:
                 for item in items:
                     item.setToolTip(str(error))

@@ -127,22 +127,48 @@ def _process(tool, paths, target, options):
                 except ToolError as error:
                     raise ToolError(f"{path.name}: {error}") from None
 
+            def selected_indexes(source, expression, path):
+                try:
+                    return parse_pages(expression, len(source))
+                except ToolError as error:
+                    raise ToolError(f"{path.name}: {error}") from None
+
             crops = options.get("merge_crops", [None] * len(paths))
+            edits = options.get("merge_edits", [[] for _ in paths])
+            if not isinstance(edits, list) or len(edits) != len(paths):
+                raise ToolError("Page edits do not match the selected input pages.")
+            from deskpdf.objects import apply_objects, apply_related_forms
+
+            def apply_source_forms(source, path):
+                all_forms = options.get("merge_form_edits")
+                if all_forms is None:
+                    related = [(parse_pages(expression, len(source))[0], obj)
+                               for source_path, expression, entries in zip(paths, selections, edits) if source_path == path
+                               for obj in entries if obj.kind == "Form"]
+                else:
+                    related = [(page, obj) for source_path, page, obj in all_forms if Path(source_path).resolve() == path]
+                apply_related_forms(source, related)
+
+            apply_source_forms(document, paths[0])
             if crops[0] is not None:
                 document[parse_pages(selections[0], len(document))[0]].set_cropbox(pdf.Rect(crops[0]))
-            edits = options.get("merge_edits", [[] for _ in paths])
-            from deskpdf.objects import apply_objects
             if edits[0]:
-                apply_objects(document, {parse_pages(selections[0], len(document))[0]: edits[0]})
+                apply_objects(document, {parse_pages(selections[0], len(document))[0]: [obj for obj in edits[0] if obj.kind != "Form"]})
             select_source_pages(document, selections[0], paths[0])
             for source_index, (path, expression) in enumerate(zip(paths[1:], selections[1:]), 1):
                 with open_document(path, password) as source:
+                    apply_source_forms(source, path)
                     if crops[source_index] is not None:
                         source[parse_pages(expression, len(source))[0]].set_cropbox(pdf.Rect(crops[source_index]))
                     if edits[source_index]:
-                        apply_objects(source, {parse_pages(expression, len(source))[0]: edits[source_index]})
-                    select_source_pages(source, expression, path)
-                    document.insert_pdf(source)
+                        apply_objects(source, {parse_pages(expression, len(source))[0]: [obj for obj in edits[source_index] if obj.kind != "Form"]})
+                    indexes = selected_indexes(source, expression, path)
+                    if len(indexes) == 1 or any(source[index].first_widget for index in indexes):
+                        for index in indexes:
+                            document.insert_pdf(source, from_page=index, to_page=index)
+                    else:
+                        select_source_pages(source, expression, path)
+                        document.insert_pdf(source)
         elif tool in {"extract", "reorder"}:
             document.select(pages)
         elif tool == "delete":

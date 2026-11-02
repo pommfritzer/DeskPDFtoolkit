@@ -489,6 +489,9 @@ class Window(QMainWindow):
                 line.addWidget(widget)
                 line.addWidget(button("Browse…", self.choose_signature))
                 self.form.addRow(title, row)
+            elif name == "form_values":
+                self.form.addRow(button("Fill visually…", self.open_visual_editor))
+                self.form.addRow(title, widget)
             else:
                 self.form.addRow(title, widget)
         self.visual_merge.setVisible(tool.id == "merge")
@@ -649,6 +652,9 @@ class Window(QMainWindow):
             options["merge_crops"] = [self.visual_merge.crops.get((path, page)) for path, page in selected]
             import copy
             options["merge_edits"] = [copy.deepcopy(self.visual_merge.edits.get((path, page), [])) for path, page in selected]
+            options["merge_form_edits"] = [(path, page, copy.deepcopy(obj))
+                                           for (path, page), entries in self.visual_merge.edits.items()
+                                           for obj in entries if obj.kind == "Form"]
         self.worker = Worker(self.current_tool.id, job_paths, Path(output), options)
         self.worker.completed.connect(self.job_done)
         self.worker.failed.connect(self.job_failed)
@@ -681,7 +687,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.5\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.6\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

@@ -288,3 +288,329 @@ def test_drag_existing_text_can_be_undone(tmp_path, application_session):
     assert focus.objects[0][0].rect != original
     focus.close()
     workspace.close()
+
+def test_fill_form_fields_in_focus_and_save(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from PySide6.QtTest import QTest
+    source = tmp_path / "form.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        for field_type, name, top in ((pdf.PDF_WIDGET_TYPE_TEXT, "Name", 50), (pdf.PDF_WIDGET_TYPE_CHECKBOX, "Agree", 100), (pdf.PDF_WIDGET_TYPE_COMBOBOX, "Choice", 150)):
+            widget = pdf.Widget()
+            widget.field_type = field_type
+            widget.field_name = name
+            widget.rect = pdf.Rect(40, top, 220, top + 30)
+            if field_type == pdf.PDF_WIDGET_TYPE_COMBOBOX:
+                widget.choice_values = ["Red", "Green", "Blue"]
+            page.add_widget(widget)
+        doc.new_page(width=400, height=500)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.show()
+    application_session.processEvents()
+    fields = {item.obj.form_name: item for item in focus.scene.items() if isinstance(item, FormFieldItem)}
+    assert set(fields) == {"Name", "Agree", "Choice"}
+    fields["Name"].setSelected(True)
+    focus.form_text.setFocus()
+    QTest.keyClicks(focus.form_text, "Alex")
+    focus.scene.clearSelection()
+    fields["Agree"].setSelected(True)
+    focus.form_check.setChecked(True)
+    focus.scene.clearSelection()
+    fields["Choice"].setSelected(True)
+    focus.form_choice.setCurrentIndex(focus.form_choice.findData("Green"))
+    focus.undo()
+    assert all(obj.form_name != "Choice" for obj in focus.objects[0] if obj.kind == "Form")
+    focus.redo()
+    focus.navigate(1)
+    focus.navigate(-1)
+    assert {obj.form_name: obj.form_value for obj in focus.objects[0] if obj.kind == "Form"} == {"Name": "Alex", "Agree": "Yes", "Choice": "Green"}
+    focus.close()
+    selected = workspace.selection()
+    assert selected == [(str(source), 0)]
+    output = tmp_path / "filled.pdf"
+    run_tool("merge", [Path(path) for path, number in selected], output, {
+        "merge_pages": [str(number + 1) for path, number in selected],
+        "merge_crops": [workspace.crops.get(key) for key in selected],
+        "merge_edits": [workspace.edits.get(key, []) for key in selected],
+    })
+    with pdf.open(output) as doc:
+        values = {widget.field_name: widget.field_value for widget in doc[0].widgets()}
+        assert values == {"Name": "Alex", "Agree": "Yes", "Choice": "Green"}
+        assert "Alex" in doc[0].get_text()
+    with pdf.open(source) as doc:
+        assert next(doc[0].widgets()).field_value == ""
+    workspace.close()
+
+def test_form_checkbox_click_and_unicode_text_with_cropped_rotated_page(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from PySide6.QtTest import QTest
+    source = tmp_path / "form.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        for field_type, name, top in ((pdf.PDF_WIDGET_TYPE_TEXT, "Name", 80), (pdf.PDF_WIDGET_TYPE_CHECKBOX, "Accept", 140)):
+            widget = pdf.Widget()
+            widget.field_type = field_type
+            widget.field_name = name
+            widget.rect = pdf.Rect(60, top, 240, top + 30)
+            page.add_widget(widget)
+        page.set_cropbox(pdf.Rect(20, 20, 380, 480))
+        page.set_rotation(90)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    before_thumbnail = workspace.pages.item(0).icon().pixmap(workspace.pages.iconSize()).toImage()
+    focus = PageFocus(workspace, 0)
+    focus.show()
+    application_session.processEvents()
+    fields = {item.obj.form_name: item for item in focus.scene.items() if isinstance(item, FormFieldItem)}
+    fields["Name"].setSelected(True)
+    focus.form_text.setFocus()
+    focus.form_text.insert("M\u00fcller Z\u00fcrich")
+    assert fields["Name"].obj.form_value == "M\u00fcller Z\u00fcrich"
+    point = focus.view.mapFromScene(fields["Accept"].rect().center())
+    QTest.mouseClick(focus.view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert focus.form_checked(fields["Accept"].obj)
+    focus.close()
+    key = (str(source), 0)
+    assert workspace.pages.item(0).toolTip() == f"{source.name} · Page 1"
+    assert workspace.pages.item(0).icon().pixmap(workspace.pages.iconSize()).toImage() != before_thumbnail
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        assert doc[0].rotation == 90
+        values = {widget.field_name: widget.field_value for widget in doc[0].widgets()}
+        assert values == {"Name": "M\u00fcller Z\u00fcrich", "Accept": "Yes"}
+    workspace.close()
+
+def test_editable_form_choice_in_focus(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from PySide6.QtTest import QTest
+    source = tmp_path / "choice.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page()
+        widget = pdf.Widget()
+        widget.field_type = pdf.PDF_WIDGET_TYPE_COMBOBOX
+        widget.field_flags = pdf.PDF_CH_FIELD_IS_EDIT
+        widget.field_name = "City"
+        widget.choice_values = ["Paris", "Bern"]
+        widget.rect = pdf.Rect(40, 60, 200, 90)
+        page.add_widget(widget)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    item.setSelected(True)
+    assert focus.form_choice.isEditable()
+    focus.form_choice.lineEdit().selectAll()
+    QTest.keyClicks(focus.form_choice.lineEdit(), "Basel")
+    assert item.obj.form_value == "Basel"
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        assert next(doc[0].widgets()).field_value == "Basel"
+    workspace.close()
+
+def test_form_choice_uses_display_name_and_saves_export_value(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    source = tmp_path / "choice-pairs.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page()
+        widget = pdf.Widget()
+        widget.field_type = pdf.PDF_WIDGET_TYPE_COMBOBOX
+        widget.field_name = "Language"
+        widget.choice_values = ["de", "fr"]
+        widget.rect = pdf.Rect(40, 60, 200, 90)
+        xref = page.add_widget(widget).xref
+        doc.xref_set_key(xref, "Opt", "[[(de)(German)] [(fr)(French)]]")
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    item.setSelected(True)
+    index = focus.form_choice.findText("German")
+    assert focus.form_choice.itemData(index) == "de"
+    focus.form_choice.setCurrentIndex(index)
+    assert item.obj.form_value == "de"
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        assert next(page.widgets()).field_value == "de"
+        assert "German" in page.get_text()
+    workspace.close()
+
+def test_form_multiline_limit_and_readonly_fields(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    source = tmp_path / "limited.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page()
+        for name, flags, top in (("Notes", pdf.PDF_TX_FIELD_IS_MULTILINE, 50), ("Locked", pdf.PDF_FIELD_IS_READ_ONLY, 120)):
+            widget = pdf.Widget()
+            widget.field_type = pdf.PDF_WIDGET_TYPE_TEXT
+            widget.field_name = name
+            widget.field_flags = flags
+            widget.text_maxlen = 5
+            widget.rect = pdf.Rect(40, top, 200, top + 50)
+            page.add_widget(widget)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    fields = {item.obj.form_name: item for item in focus.scene.items() if isinstance(item, FormFieldItem)}
+    assert set(fields) == {"Notes"}
+    fields["Notes"].setSelected(True)
+    focus.form_multiline.setPlainText("abcdef")
+    assert fields["Notes"].obj.form_value == "abcde"
+    assert focus.form_multiline.toPlainText() == "abcde"
+    focus.close()
+    workspace.close()
+
+def test_linked_fields_stay_in_sync_across_focus_and_merge(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem
+    from deskpdf.engine import run_tool
+    from PySide6.QtTest import QTest
+    source = tmp_path / "linked.pdf"
+    make_linked_form(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    workspace.select_all(True)
+    focus = PageFocus(workspace, 0)
+    first = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    first.setSelected(True)
+    focus.form_text.selectAll()
+    QTest.keyClicks(focus.form_text, "Alice")
+    focus.navigate(1)
+    second = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    assert second.obj.form_value == "Alice"
+    second.setSelected(True)
+    focus.form_text.selectAll()
+    QTest.keyClicks(focus.form_text, "Bob")
+    focus.navigate(-1)
+    first = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    assert first.obj.form_value == "Bob"
+    focus.close()
+    selected = workspace.selection()
+    related = [(path, page, obj) for (path, page), entries in workspace.edits.items() for obj in entries if obj.kind == "Form"]
+    assert len(related) == 1
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [Path(path) for path, number in selected], output, {
+        "merge_pages": [str(number + 1) for path, number in selected],
+        "merge_crops": [workspace.crops.get(key) for key in selected],
+        "merge_edits": [workspace.edits.get(key, []) for key in selected],
+        "merge_form_edits": related,
+    })
+    with pdf.open(output) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Bob", "Bob"]
+        assert all("Bob" in page.get_text() for page in doc)
+    only_first = tmp_path / "first.pdf"
+    run_tool("merge", [source], only_first, {"merge_pages": ["1"], "merge_form_edits": related})
+    with pdf.open(only_first) as doc:
+        assert next(doc[0].widgets()).field_value == "Bob"
+    with pdf.open(source) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Old", "Old"]
+    workspace.close()
+
+
+def make_linked_form(source):
+    with pdf.open() as doc:
+        kids = []
+        for index in range(2):
+            page = doc.new_page(width=400, height=500)
+            widget = pdf.Widget()
+            widget.field_name = f"temporary{index}"
+            widget.field_type = pdf.PDF_WIDGET_TYPE_TEXT
+            widget.field_value = "Old"
+            widget.rect = pdf.Rect(40, 60, 200, 90)
+            kids.append(page.add_widget(widget).xref)
+        parent = doc.get_new_xref()
+        doc.update_object(parent, f"<</FT /Tx /T (Shared) /Kids [{kids[0]} 0 R {kids[1]} 0 R] /V (Old)>>")
+        for child in kids:
+            doc.xref_set_key(child, "Parent", f"{parent} 0 R")
+            for key in ("T", "FT", "V"):
+                doc.xref_set_key(child, key, "null")
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm/Fields", f"[{parent} 0 R]")
+        doc.save(source)
+
+def test_standalone_editor_keeps_linked_form_fields_in_sync(tmp_path, application_session):
+    from deskpdf.editor import FormFieldItem, VisualEditor
+    from PySide6.QtTest import QTest
+    source = tmp_path / "linked.pdf"
+    make_linked_form(source)
+    editor = VisualEditor(source)
+    first = next(item for item in editor.scene.items() if isinstance(item, FormFieldItem))
+    first.setSelected(True)
+    editor.form_text.selectAll()
+    QTest.keyClicks(editor.form_text, "Alice")
+    editor.navigate(1)
+    second = next(item for item in editor.scene.items() if isinstance(item, FormFieldItem))
+    assert second.obj.form_value == "Alice"
+    second.setSelected(True)
+    editor.form_text.selectAll()
+    QTest.keyClicks(editor.form_text, "Bob")
+    editor.navigate(-1)
+    first = next(item for item in editor.scene.items() if isinstance(item, FormFieldItem))
+    assert first.obj.form_value == "Bob"
+    editor.capture()
+    output = tmp_path / "filled.pdf"
+    from deskpdf.objects import export_objects
+    with pdf.open(stream=editor.document.tobytes()) as doc:
+        export_objects(doc, editor.objects, output)
+    with pdf.open(output) as doc:
+        assert [next(page.widgets()).field_value for page in doc] == ["Bob", "Bob"]
+    editor.dirty = False
+    editor.close()
+
+def test_window_saves_linked_field_when_edited_page_is_not_included(tmp_path, application_session):
+    from deskpdf.catalog import TOOL_BY_ID
+    from deskpdf.editor import FormFieldItem
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QFileDialog
+    from unittest.mock import patch
+    source = tmp_path / "linked.pdf"
+    make_linked_form(source)
+    window = Window()
+    window.select_tool(TOOL_BY_ID["merge"])
+    window.add_paths([source])
+    window.visual_merge.toggle(window.visual_merge.pages.item(0))
+    focus = PageFocus(window.visual_merge, 1)
+    item = next(item for item in focus.scene.items() if isinstance(item, FormFieldItem))
+    item.setSelected(True)
+    focus.form_text.selectAll()
+    QTest.keyClicks(focus.form_text, "New")
+    focus.close()
+    window.visual_merge.toggle(window.visual_merge.pages.item(1))
+    assert window.visual_merge.selection() == [(str(source), 0)]
+    output = tmp_path / "output.pdf"
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(str(output), "")):
+        window.start_job()
+    assert window.worker.wait(10000)
+    application_session.processEvents()
+    with pdf.open(output) as doc:
+        assert next(doc[0].widgets()).field_value == "New"
+    window.close()
+
+def test_merge_keeps_form_widgets_when_importing_multiple_pages(tmp_path):
+    from deskpdf.engine import run_tool
+    linked = tmp_path / "linked.pdf"
+    make_linked_form(linked)
+    cover = tmp_path / "cover.pdf"
+    with pdf.open() as doc:
+        doc.new_page()
+        doc.save(cover)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [cover, linked], output, {"merge_pages": ["1", "1-2"]})
+    with pdf.open(output) as doc:
+        assert [next(doc[index].widgets()).field_value for index in (1, 2)] == ["Old", "Old"]

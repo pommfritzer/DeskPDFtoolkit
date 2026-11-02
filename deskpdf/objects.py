@@ -18,6 +18,17 @@ class Object:
     source_id: str = ""
     baseline_ratio: float | None = None
     opacity: float = 1.0
+    form_xref: int = 0
+    form_name: str = ""
+    form_label: str = ""
+    form_value: object = ""
+    form_type: int = 0
+    form_flags: int = 0
+    form_choices: tuple = ()
+    form_on: object = None
+    form_maxlen: int = 0
+    form_seq: int = 0
+    form_group: str = ""
     modified: bool = True
     removed: bool = False
 
@@ -38,12 +49,41 @@ def remove_originals(page, entries):
                               text=pdf.PDF_REDACT_TEXT_REMOVE if kind == "Text" else pdf.PDF_REDACT_TEXT_NONE)
 
 
+def apply_form_values(document, index, entries):
+    page = document[index]
+    for obj in entries:
+        if obj.kind != "Form":
+            continue
+        widget = page.load_widget(obj.form_xref)
+        if widget is None or widget.field_name != obj.form_name:
+            raise ValueError(f"Could not find form field {obj.form_name!r} on page {index + 1}.")
+        display = next((choice[1] for choice in obj.form_choices if isinstance(choice, (list, tuple)) and len(choice) == 2 and choice[0] == obj.form_value), None)
+        widget.field_value = display if display is not None else obj.form_value
+        widget.update()
+        if display is not None:
+            # The widget appearance uses the label; the stored PDF value must remain the export value.
+            owner = widget.xref
+            while document.xref_get_key(owner, "V")[0] == "null":
+                kind, parent = document.xref_get_key(owner, "Parent")
+                if kind != "xref":
+                    break
+                owner = int(parent.split()[0])
+            document.xref_set_key(owner, "V", pdf.get_pdf_str(str(obj.form_value)))
+    return document[index] if any(obj.kind == "Form" for obj in entries) else page
+
+
+def apply_related_forms(document, entries):
+    for index, obj in sorted(entries, key=lambda entry: entry[1].form_seq):
+        apply_form_values(document, index, [obj])
+
+
 def apply_objects(document, objects):
+    apply_related_forms(document, [(index, obj) for index, entries in objects.items() for obj in entries if obj.kind == "Form"])
     for index, entries in objects.items():
         page = document[index]
         remove_originals(page, entries)
         for obj in entries:
-            if obj.removed or (obj.source_rect and not obj.modified):
+            if obj.kind == "Form" or obj.removed or (obj.source_rect and not obj.modified):
                 continue
             visible = pdf.Rect(obj.rect)
             box = visible * page.derotation_matrix

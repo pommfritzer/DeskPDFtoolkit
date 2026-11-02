@@ -38,7 +38,7 @@ TOOLS = [
     Tool("redact", "Redact text", "Permanently remove every exact text match on selected pages.", "Edit & sign", "▰", ("pages", "text")),
     Tool("highlight", "Highlight text", "Highlight every exact text match on selected pages.", "Edit & sign", "▰", ("pages", "text")),
     Tool("sign", "Place signature", "Place your PNG signature. This is a visual, not certificate signature.", "Edit & sign", "∿", ("pages", "signature", "x", "y", "width")),
-    Tool("forms", "Fill form", "Fill existing text fields, checkboxes and choices by field name.", "Edit & sign", "☑", ("form_values",)),
+    Tool("forms", "Fill form", "Fill existing fields visually, or enter field names and values.", "Edit & sign", "☑", ("form_values",)),
     Tool("protect", "Protect PDF", "Encrypt a document with an AES-256 opening password.", "Security", "□", ("new_password",)),
     Tool("unlock", "Unlock PDF", "Remove encryption using the password you provide.", "Security", "⌑"),
 ]
