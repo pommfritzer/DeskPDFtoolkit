@@ -3,9 +3,9 @@ import tempfile
 import uuid
 
 import pymupdf as pdf
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal, QEvent
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QInputDialog, QStyledItemDelegate, QStyle, QDialog, QSlider, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QInputDialog, QStyleOptionViewItem, QStyledItemDelegate, QStyle, QDialog, QSlider, QHBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QToolTip, QVBoxLayout, QWidget
 
 from deskpdf.engine import open_document
 from deskpdf.add_page import AddPageDialog
@@ -14,8 +14,18 @@ from deskpdf.crop_page import CropPageDialog
 
 class PageActions(QStyledItemDelegate):
     def paint(self, painter, option, index):
-        super().paint(painter, option, index)
+        display = QStyleOptionViewItem(option)
+        self.initStyleOption(display, index)
+        display.features &= ~QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator
+        display.state &= ~QStyle.StateFlag.State_Selected
+        style = display.widget.style() if display.widget else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, display, painter, display.widget)
         painter.save()
+        if index.data(Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked.value:
+            image_rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemDecoration, display, display.widget)
+            painter.fillRect(image_rect, QColor(46, 139, 86, 68))
+            painter.setPen(QPen(QColor("#78d7a0"), 3))
+            painter.drawRect(image_rect.adjusted(1, 1, -2, -2))
         color = index.data(Qt.ItemDataRole.UserRole + 4) or "#bde2cd"
         painter.setPen(QColor(color))
         painter.drawLine(option.rect.left() + 4, option.rect.top() + 4, option.rect.right() - 4, option.rect.top() + 4)
@@ -45,6 +55,24 @@ class PageGrid(QListWidget):
     crop_page = Signal(int)
     focus_page = Signal(int)
     set_action = Signal(int)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.count():
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor("#b5c9bf"))
+            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "Add PDFs to get started")
+
+    def viewportEvent(self, event):
+        if event.type() == QEvent.Type.ToolTip:
+            index = self.indexAt(event.pos())
+            if index.isValid():
+                rect = self.visualRect(index)
+                x, y = event.pos().x() - rect.left(), event.pos().y() - rect.top()
+                if x > rect.width() - 36 and 8 <= y < 95:
+                    QToolTip.showText(event.globalPos(), "Delete page" if y < 36 else "Crop page" if y < 66 else "Focus and edit page", self)
+                    return True
+        return super().viewportEvent(event)
 
     def mouseReleaseEvent(self, event):
         index = self.indexAt(event.position().toPoint())

@@ -231,7 +231,7 @@ class Window(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "partition") and not self.toolbar_manual:
-            self.set_partition_default(.40 if self.stack.currentIndex() == 1 else .22)
+            self.set_partition_default(.30 if self.stack.currentIndex() == 1 else .22)
 
     def set_partition_default(self, fraction):
         if not self.toolbar_manual:
@@ -326,7 +326,7 @@ class Window(QMainWindow):
         left.setContentsMargins(0, 0, 16, 0)
         left.addWidget(label("Files", "eyebrow"))
         self.file_list = QListWidget()
-        self.file_list.setFixedHeight(65)
+        self.file_list.setFixedHeight(96)
         self.file_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.file_list.currentRowChanged.connect(self.file_selected)
         self.file_list.model().rowsMoved.connect(self.sync_paths)
@@ -430,7 +430,7 @@ class Window(QMainWindow):
         self.add_page_action.show()
         self.editor_controls.show()
         self.description.hide()
-        self.set_partition_default(.40)
+        self.set_partition_default(.30)
         self.visual_merge.controls.setVisible(tool.id == "merge")
         self.visual_merge.page_tools.setVisible(tool.id == "merge")
         self.current_tool = tool
@@ -644,7 +644,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.0\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

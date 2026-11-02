@@ -42,12 +42,6 @@ class AmbientBackground(QWidget):
         gradient.setColorAt(.55, QColor("#235c48"))
         gradient.setColorAt(1, QColor("#101f30"))
         painter.fillRect(self.rect(), gradient)
-        painter.setPen(Qt.PenStyle.NoPen)
-        for spacing, diameter, alpha in ((51, 2, 45), (136, 6, 90)):
-            painter.setBrush(QColor(177, 190, 188, alpha))
-            for x in range(20, self.width(), spacing):
-                for y in range(20, self.height(), spacing):
-                    painter.drawEllipse(x, y, diameter, diameter)
 
 
 
