@@ -30,7 +30,7 @@ TOOLS = [
     Tool("excel", "PDF to Excel", "Detect tables and export each table to a worksheet.", "Convert", "X", ("pages",), "xlsx"),
     Tool("powerpoint", "PDF to PowerPoint", "Create a slide image for each page; slide contents are not individually editable.", "Convert", "P", ("pages",), "pptx"),
     Tool("office", "Office to PDF", "Convert with a locally installed LibreOffice. No uploads.", "Convert", "↘"),
-    Tool("ocr", "Recognize text", "Make pages searchable images with Tesseract; links and forms are not retained.", "Convert", "⌕", ("language", "dpi")),
+    Tool("ocr", "Recognize text", "Make scanned text searchable while keeping the original pages, links and forms. Requires Tesseract.", "Convert", "⌕", ("pages", "language", "dpi")),
     Tool("text_overlay", "Add text", "Place text on selected pages. Click the preview to position it.", "Edit & sign", "T", ("pages", "text", "size", "x", "y")),
     Tool("watermark", "Watermark", "Add a subtle text watermark to selected pages.", "Edit & sign", "◈", ("pages", "text", "size")),
     Tool("number", "Number pages", "Add page numbers at the bottom of selected pages.", "Edit & sign", "#", ("pages",)),

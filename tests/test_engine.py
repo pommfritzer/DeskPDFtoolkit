@@ -204,3 +204,136 @@ def test_excel_table(tmp_path):
 def test_invalid_options(source, tmp_path, tool, options):
     with pytest.raises(ToolError):
         execute(source, tmp_path, tool, options)
+
+def test_ocr_preserves_original_pdf_and_avoids_duplicate_text(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    source = tmp_path / "input.pdf"
+    scan = Image.new("RGB", (300, 120), "white")
+    from PIL import ImageDraw
+    ImageDraw.Draw(scan).rectangle((30, 30, 100, 75), fill="black")
+    image = tmp_path / "scan.png"
+    scan.save(image)
+    with pdf.open() as doc:
+        for rotation in (0, 90, 180, 270):
+            page = doc.new_page(width=400, height=400)
+            page.insert_text((45, 50), "Native", fontsize=16)
+            page.insert_image(pdf.Rect(40, 90, 340, 210), filename=str(image))
+            page.insert_link({"kind": pdf.LINK_URI, "from": pdf.Rect(40, 250, 180, 275), "uri": "https://example.com"})
+            page.add_text_annot((250, 250), "Keep this note")
+            widget = pdf.Widget()
+            widget.field_name = f"field{rotation}"
+            widget.field_type = pdf.PDF_WIDGET_TYPE_TEXT
+            widget.rect = pdf.Rect(40, 300, 180, 325)
+            widget.field_value = "Keep value"
+            page.add_widget(widget)
+            page.set_cropbox(pdf.Rect(20, 20, 380, 380))
+            page.set_rotation(rotation)
+        doc.set_metadata({"author": "Test author"})
+        doc.save(source)
+    calls = []
+    def fake_tesseract(command, **kwargs):
+        calls.append(command)
+        assert command[-3:] == ["-c", "textonly_pdf=1", "pdf"]
+        with Image.open(command[1]) as image:
+            assert image.getpixel((70, 45)) == (255, 255, 255)
+            width, height = image.size
+        with pdf.open() as recognized:
+            page = recognized.new_page(width=width, height=height)
+            page.insert_text((100, 250), "SCANNED", fontsize=28, render_mode=3)
+            recognized.save(command[2] + ".pdf")
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr("deskpdf.engine.executable", lambda *args: "tesseract")
+    monkeypatch.setattr("deskpdf.engine.subprocess.run", fake_tesseract)
+    output = tmp_path / "recognized.pdf"
+    run_tool("ocr", [source], output, {"dpi": 144})
+    assert len(calls) == 4
+    with pdf.open(source) as original, pdf.open(output) as result:
+        assert result.metadata["author"] == "Test author"
+        for rotation, before, after in zip((0, 90, 180, 270), original, result):
+            assert after.rotation == rotation
+            assert after.cropbox == before.cropbox
+            assert after.get_pixmap(annots=False).samples == before.get_pixmap(annots=False).samples
+            assert after.get_text().count("Native") == 1
+            assert "SCANNED" in after.get_text()
+            scanned = next(word for word in after.get_text("words") if word[4] == "SCANNED")
+            assert 20 <= scanned[0] < 320 and 70 <= scanned[1] < 190
+            assert len(after.get_links()) == 1
+            assert [widget.field_value for widget in after.widgets()] == ["Keep value"]
+            assert [annotation.info["content"] for annotation in after.annots()] == ["Keep this note"]
+
+
+def test_ocr_failure_does_not_overwrite_existing_destination(source, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr("deskpdf.engine.executable", lambda *args: "tesseract")
+    monkeypatch.setattr("deskpdf.engine.subprocess.run", lambda *args, **kwargs: SimpleNamespace(returncode=1))
+    output = tmp_path / "existing.pdf"
+    output.write_bytes(b"keep me")
+    with pytest.raises(ToolError, match="Tesseract failed"):
+        run_tool("ocr", [source], output, {})
+    assert output.read_bytes() == b"keep me"
+    assert not list(tmp_path.glob(".deskpdf-*"))
+
+def test_ocr_keeps_input_encryption(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    source = tmp_path / "protected.pdf"
+    with pdf.open() as doc:
+        doc.new_page().insert_text((40, 60), "Readable")
+        doc.save(source, encryption=pdf.PDF_ENCRYPT_AES_256, user_pw="secret", owner_pw="secret")
+    def fake_tesseract(command, **kwargs):
+        with pdf.open() as recognized:
+            page = recognized.new_page()
+            page.insert_text((40, 100), "OCR", render_mode=3)
+            recognized.save(command[2] + ".pdf")
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr("deskpdf.engine.executable", lambda *args: "tesseract")
+    monkeypatch.setattr("deskpdf.engine.subprocess.run", fake_tesseract)
+    output = tmp_path / "output.pdf"
+    run_tool("ocr", [source], output, {"password": "secret"})
+    with pdf.open(output) as doc:
+        assert doc.needs_pass
+        assert doc.authenticate("secret")
+        assert "Readable" in doc[0].get_text()
+        assert "OCR" in doc[0].get_text()
+
+
+def test_ocr_with_real_tesseract(tmp_path, monkeypatch):
+    import os
+    from PIL import ImageDraw, ImageFont
+    executable = os.environ.get("PDFTOOLKIT26_TEST_TESSERACT")
+    if not executable:
+        pytest.skip("Set PDFTOOLKIT26_TEST_TESSERACT to test the real OCR engine")
+    image = Image.new("RGB", (900, 350), "white")
+    ImageDraw.Draw(image).text((65, 100), "SCAN SAMPLE 2026", font=ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 72), fill="black")
+    image_path = tmp_path / "scan.png"
+    image.save(image_path)
+    source = tmp_path / "scan.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=600, height=500)
+        page.insert_image(pdf.Rect(40, 100, 490, 275), filename=str(image_path))
+        page.set_cropbox(pdf.Rect(20, 20, 570, 470))
+        page.set_rotation(90)
+        doc.save(source)
+    monkeypatch.setattr("deskpdf.engine.executable", lambda *args: executable)
+    output = tmp_path / "recognized.pdf"
+    run_tool("ocr", [source], output, {"dpi": 144})
+    with pdf.open(source) as original, pdf.open(output) as result:
+        assert result[0].rotation == 90
+        assert "SCAN SAMPLE 2026" in result[0].get_text()
+        assert result[0].get_pixmap().samples == original[0].get_pixmap().samples
+
+def test_ocr_only_recognizes_selected_pages(source, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    def fake_tesseract(command, **kwargs):
+        calls.append(command)
+        with pdf.open() as recognized:
+            recognized.new_page(width=400, height=500).insert_text((40, 100), "SCANNED", render_mode=3)
+            recognized.save(command[2] + ".pdf")
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr("deskpdf.engine.executable", lambda *args: "tesseract")
+    monkeypatch.setattr("deskpdf.engine.subprocess.run", fake_tesseract)
+    output = tmp_path / "selected.pdf"
+    run_tool("ocr", [source], output, {"pages": "2"})
+    assert len(calls) == 1
+    with pdf.open(output) as doc:
+        assert ["SCANNED" in page.get_text() for page in doc] == [False, True, False]

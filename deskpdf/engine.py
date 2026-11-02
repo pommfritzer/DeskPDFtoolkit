@@ -8,7 +8,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import pymupdf as pdf
-from PIL import Image, ImageOps, ImageSequence
+from PIL import Image, ImageDraw, ImageOps, ImageSequence
 
 
 class ToolError(ValueError):
@@ -166,19 +166,30 @@ def _process(tool, paths, target, options):
             _export(document, pages, tool, target)
             return
         elif tool == "ocr":
-            tesseract = executable("tesseract", [r"C:\Program Files\Tesseract-OCR\tesseract.exe"])
+            local_programs = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs"
+            tesseract = executable("tesseract", [str(local_programs / "Tesseract-OCR" / "tesseract.exe"), r"C:\Program Files\Tesseract-OCR\tesseract.exe"])
             dpi = int(numeric(options, "dpi", 144, 72, 300))
-            output = stack.enter_context(pdf.open())
-            for index, page in enumerate(document):
+            for index in unique_pages:
+                page = document[index]
                 base = target.parent / f"ocr-{index}"
-                page.get_pixmap(dpi=dpi).save(str(base) + ".png")
-                result = subprocess.run([tesseract, str(base) + ".png", str(base), "-l", options.get("language", "eng"), "pdf"], capture_output=True, timeout=180, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                if result.returncode:
-                    raise ToolError("Tesseract failed. Check that the requested language data is installed.")
-                with pdf.open(str(base) + ".pdf") as recognized:
-                    output.insert_pdf(recognized)
-            output.save(target, garbage=4, deflate=True)
-            return
+                rotation = page.rotation
+                try:
+                    page.set_rotation(0)
+                    pix = page.get_pixmap(dpi=dpi, alpha=False, annots=False)
+                    image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                    mask = ImageDraw.Draw(image)
+                    xscale, yscale = pix.width / page.rect.width, pix.height / page.rect.height
+                    for x0, y0, x1, y1, *_ in page.get_text("words"):
+                        mask.rectangle((x0 * xscale - 1, y0 * yscale - 1, x1 * xscale + 1, y1 * yscale + 1), fill="white")
+                    image.save(str(base) + ".png", dpi=(dpi, dpi))
+                    result = subprocess.run([tesseract, str(base) + ".png", str(base), "-l", options.get("language", "eng"), "-c", "textonly_pdf=1", "pdf"], capture_output=True, timeout=180, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    if result.returncode:
+                        raise ToolError("Tesseract failed. Check that the requested language data is installed.")
+                    with pdf.open(str(base) + ".pdf") as recognized:
+                        if recognized[0].get_contents():
+                            page.show_pdf_page(page.rect, recognized, 0, keep_proportion=False)
+                finally:
+                    page.set_rotation(rotation)
         elif tool == "flatten":
             document.bake()
         elif tool == "clean":
