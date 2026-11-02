@@ -618,7 +618,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.1\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.5.2\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

@@ -20,6 +20,10 @@ try {
 }
 & $python scripts/check_bundle.py
 if ($LASTEXITCODE) { throw 'Packaged application startup failed.' }
+if ($env:PDFTOOLKIT26_SHELL_CERT_THUMBPRINT) {
+    & "$PSScriptRoot\build-shell.ps1"
+    if ($LASTEXITCODE) { throw 'Modern shell integration build failed.' }
+}
 $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 $candidates = @('.tools\Inno\ISCC.exe', "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")
 $iscc = if ($compiler) { $compiler.Source } else { $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1 }

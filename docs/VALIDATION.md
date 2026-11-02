@@ -1,5 +1,9 @@
 # Initial release validation
 
+## 0.5.2 Windows 11 modern menu
+
+Built an x64 native IExplorerCommand DLL and sparse MSIX registration. Windows rejected unsigned executable activation and current-user-only signing trust. With the user's explicit approval, the local PDFtoolkit26 certificate was installed into Local Machine Trusted People; the signed package then registered with status OK. Native COM activation verified the exact menu title, executable icon path, enabled PDF state, and invocation handoff. No global menu preference or system security setting was disabled.
+
 ## 0.5.1 Explorer open integration
 
 The menu label is Open with PDFtoolkit26, with a quoted executable icon path and Player multi-selection model. A process-level test forwards multiple requests, spaces and Unicode filenames to a single primary local server. A per-user instance lock handles simultaneous launches; the local server restricts access to the current user. Packaged smoke tests use an isolated instance scope to avoid interacting with a running user window.

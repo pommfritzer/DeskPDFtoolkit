@@ -1,4 +1,4 @@
-#define AppVersion "0.5.1"
+#define AppVersion "0.5.2"
 [Setup]
 AppId={{E67CB156-753F-48F5-943A-71157495281C}
 AppName=PDFtoolkit26
@@ -32,6 +32,10 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Source: "..\dist\PDFtoolkit26\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\LICENSE"; DestDir: "{app}"
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"
+Source: "..\build\Shell\PDFCommand-*.dll"; DestDir: "{app}\Shell"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\build\Shell\PDFtoolkit26.ContextMenu.msix"; DestDir: "{app}\Shell"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\shell\register.ps1"; DestDir: "{app}\Shell"; Flags: ignoreversion
+Source: "..\shell\unregister.ps1"; DestDir: "{app}\Shell"; Flags: ignoreversion
 
 [InstallDelete]
 ; Remove obsolete bundled libraries when upgrading an existing installation.
@@ -58,7 +62,14 @@ Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolk
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFtoolkit26.Extract\command"; ValueType: string; ValueName: ""; ValueData: """{app}\PDFtoolkit26.exe"" --tool extract ""%1"""; Tasks: explorer
 
 [Run]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Shell\register.ps1"""; Flags: runhidden waituntilterminated; Tasks: explorer; Check: FileExists(ExpandConstant('{app}\Shell\PDFtoolkit26.ContextMenu.msix'))
 Filename: "{app}\PDFtoolkit26.exe"; Description: "Open PDFtoolkit26"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\Shell"
+
+[UninstallRun]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Shell\unregister.ps1"""; Flags: runhidden waituntilterminated
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
