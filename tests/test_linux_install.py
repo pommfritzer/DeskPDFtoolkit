@@ -69,7 +69,8 @@ def test_installer_rejects_shortcut_symlink(distribution, tmp_path):
     assert result.returncode != 0
     assert important.read_text(encoding="utf-8") == "keep"
 
-def test_desktop_entry_launches_pdf_paths(distribution, tmp_path):
+@pytest.mark.parametrize("directory", ["plain path", "percent %", "dollar $", 'quote "', "tick `", "backslash \\"])
+def test_desktop_entry_launches_pdf_paths(distribution, tmp_path, directory):
     import time
     gio = shutil.which("gio")
     if not gio:
@@ -77,7 +78,7 @@ def test_desktop_entry_launches_pdf_paths(distribution, tmp_path):
     executable = distribution / "PDFtoolkit26"
     executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$PDFTOOLKIT26_TEST_ARGUMENTS"\n', encoding="utf-8")
     executable.chmod(0o755)
-    data = tmp_path / 'user space % $ " ` \\' / "data"
+    data = tmp_path / directory / "data"
     arguments = tmp_path / "received.txt"
     document = tmp_path / "a file \u00dc.pdf"
     document.write_bytes(b"test")
