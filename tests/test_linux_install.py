@@ -84,7 +84,8 @@ def test_desktop_entry_launches_pdf_paths(distribution, tmp_path):
     env = {**os.environ, "HOME": str(tmp_path), "XDG_DATA_HOME": str(data), "PDFTOOLKIT26_TEST_ARGUMENTS": str(arguments)}
     subprocess.run(["sh", str(distribution / "install.sh")], env=env, check=True, capture_output=True, text=True)
     desktop = data / "applications" / "org.pdftoolkit26.desktop"
-    subprocess.run([gio, "launch", str(desktop), str(document)], env=env, check=True, capture_output=True, text=True)
+    result = subprocess.run([gio, "launch", str(desktop), str(document)], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, f"{result.stderr}\n{desktop.read_text(encoding='utf-8')}"
     deadline = time.monotonic() + 5
     while not arguments.exists() and time.monotonic() < deadline:
         time.sleep(.05)
