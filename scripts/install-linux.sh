@@ -53,7 +53,8 @@ if [ -n "$backup" ]; then rm -rf -- "$backup"; backup=; fi
 
 escape_exec() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g; s/`/\\`/g; s/%/%%/g' | sed 's/\\/\\\\/g'; }
 escape_value() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
-command_path=$(escape_exec "$target/PDFtoolkit26")
+encoded_path=$(printf '%s' "$target/PDFtoolkit26" | base64 | tr -d '\n')
+command_script=$(escape_exec "exec \"\$(echo $encoded_path | base64 -d)\" \"\$@\"")
 icon_path=$(escape_value "$target/_internal/deskpdf/assets/icon.png")
 cat > "$desktop" <<EOF
 [Desktop Entry]
@@ -61,7 +62,7 @@ cat > "$desktop" <<EOF
 Type=Application
 Name=PDFtoolkit26
 Comment=Edit, organize and convert PDF files
-Exec="$command_path" %F
+Exec=/bin/sh -c "$command_script" pdftoolkit26 %F
 Icon=$icon_path
 Terminal=false
 Categories=Office;Graphics;

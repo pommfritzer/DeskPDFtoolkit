@@ -33,8 +33,7 @@ def test_install_upgrade_and_uninstall(distribution, tmp_path):
     assert (target / ".pdftoolkit26-managed").is_file()
     entry = desktop.read_text(encoding="utf-8")
     assert 'Name=PDFtoolkit26' in entry and 'MimeType=application/pdf;' in entry
-    assert 'home with space %%' in entry and ' %F' in entry
-    assert r'\\$' in entry and r'\\"' in entry and r'\\`' in entry
+    assert 'Exec=/bin/sh -c ' in entry and ' %F' in entry
     if shutil.which("desktop-file-validate"):
         subprocess.run(["desktop-file-validate", str(desktop)], check=True, capture_output=True, text=True)
     (distribution / "PDFtoolkit26").write_text("second version", encoding="utf-8")
