@@ -32,7 +32,7 @@ On Windows, download the installer from [GitHub Releases](https://github.com/pom
 
 The optional Explorer integration adds **Open in PDFtoolkit26**, **Compress with PDFtoolkit26**, and **Extract pages with PDFtoolkit26** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
 
-Windows builds target Windows 10/11 x64 and are unsigned. Linux x64 builds are portable archives: extract the archive and run `PDFtoolkit26/PDFtoolkit26`. macOS builds are separate Apple Silicon and Intel app archives: extract the archive and move `PDFtoolkit26.app` to Applications. The macOS preview is not notarized, so macOS may block it until explicitly allowed in Privacy & Security. Desktop context-menu integration is currently Windows-only.
+Windows builds target Windows 10/11 x64 and are unsigned. On Linux x64, extract the archive and run `./PDFtoolkit26/install.sh` to install for your account and add an application-menu and Open With entry. The executable can also be run directly from the extracted folder. To uninstall, run `"${XDG_DATA_HOME:-$HOME/.local/share}/pdftoolkit26/uninstall.sh"`. macOS builds are separate Apple Silicon and Intel app archives: extract the archive and move `PDFtoolkit26.app` to Applications. The macOS preview is not notarized, so macOS may block it until explicitly allowed in Privacy & Security.
 
 To run from source on Linux or macOS, install Python 3.11 or newer, then:
 

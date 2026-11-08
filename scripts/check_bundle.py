@@ -5,8 +5,9 @@ import uuid
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-application = (root / "dist" / "PDFtoolkit26.app" / "Contents" / "MacOS" / "PDFtoolkit26" if sys.platform == "darwin"
-               else root / "dist" / "PDFtoolkit26" / ("PDFtoolkit26.exe" if os.name == "nt" else "PDFtoolkit26"))
+default_application = (root / "dist" / "PDFtoolkit26.app" / "Contents" / "MacOS" / "PDFtoolkit26" if sys.platform == "darwin"
+                       else root / "dist" / "PDFtoolkit26" / ("PDFtoolkit26.exe" if os.name == "nt" else "PDFtoolkit26"))
+application = Path(os.environ.get("PDFTOOLKIT26_CHECK_EXECUTABLE", default_application))
 subprocess.run([str(application), "--help"], timeout=20, check=True)
 environment = os.environ.copy()
 environment.setdefault("QT_QPA_PLATFORM", "offscreen")

@@ -12,6 +12,9 @@ version=$("$python" -c 'from deskpdf import __version__; print(__version__)')
 mkdir -p releases
 case "$(uname -s)" in
     Linux)
+        cp scripts/install-linux.sh dist/PDFtoolkit26/install.sh
+        cp scripts/uninstall-linux.sh dist/PDFtoolkit26/uninstall.sh
+        chmod +x dist/PDFtoolkit26/install.sh dist/PDFtoolkit26/uninstall.sh
         tar -C dist -czf "releases/PDFtoolkit26-${version}-linux-$(uname -m).tar.gz" PDFtoolkit26
         ;;
     Darwin)
