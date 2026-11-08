@@ -1,4 +1,4 @@
-name: Windows build
+name: Desktop builds
 on:
   push:
   pull_request:
@@ -21,9 +21,46 @@ jobs:
         with:
           name: PDFtoolkit26-Windows-x64
           path: releases/*.exe
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PDFTOOLKIT26_TEST_TESSERACT: tesseract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-xinput0 libxcb-render-util0 xvfb xauth fonts-dejavu-core tesseract-ocr
+      - if: runner.os == 'macOS'
+        run: command -v tesseract || brew install tesseract
+      - run: python -m pip install ".[dev]"
+      - run: bash scripts/build-unix.sh
+        env:
+          PYTHON: python
+      - if: runner.os == 'Linux'
+        run: QT_QPA_PLATFORM=xcb xvfb-run -a python scripts/check_bundle.py
+      - name: Check installed package outside the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          python -m deskpdf.app --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PDFtoolkit26-Unix-${{ matrix.os }}
+          path: |
+            releases/*.tar.gz
+            releases/*.zip
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: windows
+    needs: [windows, unix]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -32,19 +69,26 @@ jobs:
         with:
           name: PDFtoolkit26-Windows-x64
           path: releases
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: PDFtoolkit26-Unix-*
+          path: releases
+          merge-multiple: true
       - name: Publish preview installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          Get-FileHash releases/PDFtoolkit26-0.6.8-Setup.exe -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLower() + '  PDFtoolkit26-0.6.8-Setup.exe' } | Set-Content -Encoding ascii releases/SHA256SUMS.txt
+          $assets = @(Get-ChildItem releases -File | Where-Object { $_.Extension -in '.exe', '.gz', '.zip' })
+          $assets | Get-FileHash -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLower() + '  ' + (Split-Path $_.Path -Leaf) } | Set-Content -Encoding ascii releases/SHA256SUMS.txt
           gh release view $env:GITHUB_REF_NAME
           if ($LASTEXITCODE) {
-            gh release create $env:GITHUB_REF_NAME --draft --prerelease --title "PDFtoolkit26 $env:GITHUB_REF_NAME — Windows preview" --notes "Native Windows PDF workbench. See the README for supported tools, optional dependencies, and limitations. This preview installer is unsigned."
+            gh release create $env:GITHUB_REF_NAME --draft --prerelease --title "PDFtoolkit26 $env:GITHUB_REF_NAME — desktop preview" --notes "PDF workbench for Windows, Linux and macOS. See the README for supported tools, optional dependencies, and limitations. These preview builds are not signed by a public certificate."
             if ($LASTEXITCODE) { throw 'Could not create release.' }
           }
-          gh release upload $env:GITHUB_REF_NAME releases/PDFtoolkit26-0.6.8-Setup.exe releases/SHA256SUMS.txt --clobber
+          $assetPaths = @($assets | ForEach-Object { $_.FullName }) + @('releases/SHA256SUMS.txt')
+          gh release upload $env:GITHUB_REF_NAME @assetPaths --clobber
           if ($LASTEXITCODE) { throw 'Could not upload installer.' }
           gh release edit $env:GITHUB_REF_NAME --draft=false --prerelease
           if ($LASTEXITCODE) { throw 'Could not publish release.' }

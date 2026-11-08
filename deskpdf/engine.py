@@ -2,6 +2,7 @@ import io
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 from contextlib import ExitStack
@@ -55,6 +56,23 @@ def executable(name: str, candidates: list[str]) -> str:
         if Path(candidate).is_file():
             return candidate
     raise ToolError(f"Install {name} locally and restart PDFtoolkit26 to use this tool.")
+
+
+def executable_candidates(name: str, platform: str | None = None) -> list[str]:
+    platform = platform or sys.platform
+    if platform == "win32":
+        local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs"
+        return {
+            "tesseract": [str(local / "Tesseract-OCR" / "tesseract.exe"), r"C:\Program Files\Tesseract-OCR\tesseract.exe"],
+            "soffice": [r"C:\Program Files\LibreOffice\program\soffice.exe"],
+        }.get(name, [])
+    if platform == "darwin":
+        return {
+            "tesseract": ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"],
+            "soffice": ["/Applications/LibreOffice.app/Contents/MacOS/soffice"],
+        }.get(name, [])
+    return {"tesseract": ["/usr/bin/tesseract", "/usr/local/bin/tesseract"],
+            "soffice": ["/usr/bin/soffice", "/usr/local/bin/soffice"]}.get(name, [])
 
 
 def numeric(options, name, default, minimum, maximum):
@@ -217,7 +235,7 @@ def _process(tool, paths, target, options):
     password = options.get("password", "")
     with ExitStack() as stack:
         if tool == "office":
-            converter = executable("soffice", [r"C:\Program Files\LibreOffice\program\soffice.exe"])
+            converter = executable("soffice", executable_candidates("soffice"))
             profile = target.parent / "libreoffice-profile"
             result = subprocess.run([converter, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--convert-to", "pdf", "--outdir", str(target.parent), str(paths[0])], capture_output=True, timeout=180, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             converted = target.parent / (paths[0].stem + ".pdf")
@@ -325,8 +343,7 @@ def _process(tool, paths, target, options):
             _export(document, pages, tool, target)
             return
         elif tool == "ocr":
-            local_programs = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs"
-            tesseract = executable("tesseract", [str(local_programs / "Tesseract-OCR" / "tesseract.exe"), r"C:\Program Files\Tesseract-OCR\tesseract.exe"])
+            tesseract = executable("tesseract", executable_candidates("tesseract"))
             dpi = int(numeric(options, "dpi", 144, 72, 300))
             for index in unique_pages:
                 page = document[index]

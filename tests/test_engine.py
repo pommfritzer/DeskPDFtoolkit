@@ -1,4 +1,5 @@
 import zipfile
+from pathlib import Path
 
 import pymupdf as pdf
 import pytest
@@ -303,7 +304,10 @@ def test_ocr_with_real_tesseract(tmp_path, monkeypatch):
     if not executable:
         pytest.skip("Set PDFTOOLKIT26_TEST_TESSERACT to test the real OCR engine")
     image = Image.new("RGB", (900, 350), "white")
-    ImageDraw.Draw(image).text((65, 100), "SCAN SAMPLE 2026", font=ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 72), fill="black")
+    candidates = [Path("C:/Windows/Fonts/arial.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/System/Library/Fonts/Supplemental/Arial.ttf")]
+    font_path = next((path for path in candidates if path.is_file()), None)
+    font = ImageFont.truetype(str(font_path), 72) if font_path else ImageFont.load_default(size=72)
+    ImageDraw.Draw(image).text((65, 100), "SCAN SAMPLE 2026", font=font, fill="black")
     image_path = tmp_path / "scan.png"
     image.save(image_path)
     source = tmp_path / "scan.pdf"
@@ -337,3 +341,12 @@ def test_ocr_only_recognizes_selected_pages(source, tmp_path, monkeypatch):
     assert len(calls) == 1
     with pdf.open(output) as doc:
         assert ["SCANNED" in page.get_text() for page in doc] == [False, True, False]
+
+def test_optional_tool_locations_cover_supported_platforms(monkeypatch):
+    from deskpdf.engine import executable_candidates
+    monkeypatch.setenv("LOCALAPPDATA", "C:/Users/example/AppData/Local")
+    assert any("Tesseract-OCR" in path for path in executable_candidates("tesseract", "win32"))
+    assert "/opt/homebrew/bin/tesseract" in executable_candidates("tesseract", "darwin")
+    assert "/Applications/LibreOffice.app/Contents/MacOS/soffice" in executable_candidates("soffice", "darwin")
+    assert "/usr/bin/tesseract" in executable_candidates("tesseract", "linux")
+    assert "/usr/bin/soffice" in executable_candidates("soffice", "linux")

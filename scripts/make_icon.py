@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 from PIL import Image
 from PySide6.QtCore import Qt
@@ -16,3 +17,5 @@ painter.end()
 image.save(str(assets / "icon.png"))
 with Image.open(assets / "icon.png") as source:
     source.save(assets / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    if sys.platform == "darwin":
+        source.save(assets / "icon.icns", format="ICNS")

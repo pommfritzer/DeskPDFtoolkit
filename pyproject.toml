@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdftoolkit26"
-version = "0.6.8"
-description = "A quiet, local-first PDF workbench for Windows"
+version = "0.6.9"
+description = "A quiet, local-first PDF workbench for Windows, Linux and macOS"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 dependencies = ["PySide6-Essentials>=6.8,<7", "PyMuPDF>=1.26.7,<2", "Pillow>=11,<14", "python-docx>=1.2,<2", "openpyxl>=3.1,<4", "python-pptx>=1.0,<2"]

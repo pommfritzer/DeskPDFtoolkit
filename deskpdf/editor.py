@@ -60,6 +60,18 @@ class ObjectItem(QGraphicsRectItem):
 
     def paint(self, painter, option, widget=None):
         r = self.rect()
+        painter.save()
+        if self.obj.rotation == 90:
+            painter.translate(r.width(), 0)
+            painter.rotate(90)
+            r = QRectF(0, 0, r.height(), r.width())
+        elif self.obj.rotation == 180:
+            painter.translate(r.width(), r.height())
+            painter.rotate(180)
+        elif self.obj.rotation == 270:
+            painter.translate(0, r.height())
+            painter.rotate(270)
+            r = QRectF(0, 0, r.height(), r.width())
         painter.setOpacity(self.obj.opacity)
         painter.setPen(QPen(QColor(self.obj.color), 2))
         if self.obj.source_rect and not self.obj.modified:
@@ -78,7 +90,9 @@ class ObjectItem(QGraphicsRectItem):
             painter.setFont(font)
             painter.setClipRect(r)
             painter.drawText(r, Qt.TextFlag.TextWordWrap, self.obj.text)
+        painter.restore()
         if self.isSelected():
+            r = self.rect()
             painter.setOpacity(1)
             painter.setClipping(False)
             painter.setPen(QPen(QColor("#3baf70"), 1, Qt.PenStyle.DashLine))
@@ -170,7 +184,7 @@ class VisualEditor(QDialog):
         properties.addWidget(self.design_panel)
         self.content_hint = QLabel("Select text, a picture or a form field on the page")
         self.content_hint.setWordWrap(True)
-        self.content_hint.setToolTip("Some overlapping, rotated or flattened content cannot be edited separately.")
+        self.content_hint.setToolTip("Some overlapping, individually rotated or flattened content cannot be edited separately.")
         controls.addWidget(self.content_hint)
         self.text = QPlainTextEdit()
         self.text.setPlaceholderText("Select a text box to edit its words")
@@ -262,7 +276,7 @@ class VisualEditor(QDialog):
         self.loading = True
         self.scene.clear()
         page = self.document[self.page]
-        self.content_hint.setText("Existing page content on rotated pages cannot be edited yet." if page.rotation else "Select text, a picture or a form field on the page")
+        self.content_hint.setText("Select text, a picture or a form field on the page")
         self.background = self.scene.addPixmap(QPixmap())
         self.background.setScale(1 / 1.5)
         self.background.setZValue(-100)
@@ -330,7 +344,7 @@ class VisualEditor(QDialog):
         return fields
 
     def existing_objects(self, page):
-        if page.rotation or any(annot.type[0] == pdf.PDF_ANNOT_REDACT for annot in page.annots() or []):
+        if any(annot.type[0] == pdf.PDF_ANNOT_REDACT for annot in page.annots() or []):
             return []
         objects = []
         blocks = page.get_text("dict")["blocks"]
@@ -351,7 +365,7 @@ class VisualEditor(QDialog):
                         if not span["text"].strip():
                             continue
                         box = pdf.Rect(span["bbox"]) * page.rotation_matrix
-                        if any(box.intersects(rect) for rect in form_rects):
+                        if any(pdf.Rect(span["bbox"]).intersects(rect) for rect in form_rects):
                             continue
                         flags = span["flags"]
                         font = span["font"].lower()
@@ -363,7 +377,7 @@ class VisualEditor(QDialog):
                                               size=span["size"], bold=bool(flags & 16) or "bold" in font,
                                               italic=bool(flags & 2), color=color, source_rect=tuple(box),
                                               baseline_ratio=(origin[1] - span["bbox"][1]) / span["size"],
-                                              opacity=span.get("alpha", 255) / 255,
+                                              opacity=span.get("alpha", 255) / 255, rotation=page.rotation,
                                               source_id=f"t:{identity}", modified=False))
             elif block["type"] == 1 and block.get("image"):
                 transform = block.get("transform", (1, 0, 0, 1, 0, 0))
@@ -376,12 +390,13 @@ class VisualEditor(QDialog):
                         image_data = pdf.Pixmap(pdf.Pixmap(image_data), pdf.Pixmap(block["mask"])).tobytes("png")
                     except (RuntimeError, ValueError):
                         continue
-                identity = f"{box.x0 + page.cropbox.x0:.1f}:{box.y0 + page.cropbox.y0:.1f}:{box.width:.1f}:{box.height:.1f}"
+                unrotated = pdf.Rect(block["bbox"])
+                identity = f"{unrotated.x0 + page.cropbox.x0:.1f}:{unrotated.y0 + page.cropbox.y0:.1f}:{unrotated.width:.1f}:{unrotated.height:.1f}"
                 objects.append(Object("Image", tuple(box), image_data=image_data, source_rect=tuple(box),
-                                      source_id=f"i:{identity}", modified=False))
+                                      source_id=f"i:{identity}", modified=False, rotation=page.rotation))
         safe = []
         for obj in objects:
-            box = pdf.Rect(obj.source_rect)
+            box = pdf.Rect(obj.source_rect) * page.derotation_matrix
             if obj.kind == "Text":
                 box.y0 += box.height * .15
                 box.y1 -= box.height * .15
@@ -597,14 +612,14 @@ class VisualEditor(QDialog):
         if dialog.exec() != QDialog.DialogCode.Accepted: return
         self.remember()
         old = page.cropbox
+        old_derotation = page.derotation_matrix
         box = pdf.Rect(dialog.cropbox())
         page.set_cropbox(box)
-        delta = pdf.Point(old.x0 - box.x0, old.y0 - box.y0) * page.rotation_matrix - pdf.Point(0, 0) * page.rotation_matrix
+        delta = (old.x0 - box.x0, old.y0 - box.y0, old.x0 - box.x0, old.y0 - box.y0)
         for obj in self.objects.get(self.page, []):
-            r = pdf.Rect(obj.rect) + (delta.x, delta.y, delta.x, delta.y)
-            obj.rect = tuple(r)
+            obj.rect = tuple((pdf.Rect(obj.rect) * old_derotation + delta) * page.rotation_matrix)
             if obj.source_rect:
-                obj.source_rect = tuple(pdf.Rect(obj.source_rect) + (delta.x, delta.y, delta.x, delta.y))
+                obj.source_rect = tuple((pdf.Rect(obj.source_rect) * old_derotation + delta) * page.rotation_matrix)
         self.render()
 
     def save(self):

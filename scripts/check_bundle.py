@@ -1,13 +1,15 @@
 import os
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-application = root / "dist" / "PDFtoolkit26" / "PDFtoolkit26.exe"
+application = (root / "dist" / "PDFtoolkit26.app" / "Contents" / "MacOS" / "PDFtoolkit26" if sys.platform == "darwin"
+               else root / "dist" / "PDFtoolkit26" / ("PDFtoolkit26.exe" if os.name == "nt" else "PDFtoolkit26"))
 subprocess.run([str(application), "--help"], timeout=20, check=True)
 environment = os.environ.copy()
-environment["QT_QPA_PLATFORM"] = "offscreen"
+environment.setdefault("QT_QPA_PLATFORM", "offscreen")
 environment["PDFTOOLKIT26_INSTANCE_SCOPE"] = "bundle-check-" + uuid.uuid4().hex
 process = subprocess.Popen([str(application), "--tool", "compress"], env=environment)
 try:

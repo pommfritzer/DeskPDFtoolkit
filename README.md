@@ -16,11 +16,11 @@ Select one or more PDFs in Explorer and choose **Open with PDFtoolkit26**. The e
 
 Choose **Editor** in the top bar to edit the selected PDF, or choose a file if none is selected. The page canvas supports added text boxes, pictures, rectangles and ellipses. Select an object and drag it to move; drag its bottom-right handle to resize. The property panel edits text, font family, size, bold, italic and colour, including custom colours. Crop edits page margins. Undo/redo, page navigation, canvas zoom with Ctrl++/Ctrl+-, and save-a-copy are available. Closing or pressing Escape asks before discarding unsaved work.
 
-Added objects leave the original content intact. Select supported existing text spans and embedded pictures to edit, move, resize or delete them; select a picture and choose Replace picture to swap it. Supported text fields, checkboxes, radio groups, and choice lists can be filled directly in the editor and remain editable in the saved PDF. Edited original text preserves its color and opacity and uses an approximate font. Short single-line edits keep the original size and baseline when they fit; other text is fitted within its box. Check the saved result. Overlapping content, rotated pages and some complex or flattened content cannot be edited separately. Scanned text is part of a picture unless OCR has added a text layer. This is an initial visual editor, not complete Acrobat feature parity. PDF form filling and redaction remain available through their dedicated tools.
+Added objects leave the original content intact. Select supported existing text spans and embedded pictures to edit, move, resize or delete them; select a picture and choose Replace picture to swap it. Supported text fields, checkboxes, radio groups, and choice lists can be filled directly in the editor and remain editable in the saved PDF. Edited original text preserves its color and opacity and uses an approximate font. Short single-line edits keep the original size and baseline when they fit; other text is fitted within its box. Check the saved result. Overlapping content, individually rotated objects and some complex or flattened content cannot be edited separately. Scanned text is part of a picture unless OCR has added a text layer. This is an initial visual editor, not complete Acrobat feature parity. PDF form filling and redaction remain available through their dedicated tools.
 
-**Your PDFs, at hand.** A quiet, local-first PDF workbench for Windows.
+**Your PDFs, at hand.** A quiet, local-first PDF workbench for Windows, Linux and macOS.
 
-Version 0.2 introduces a full-width single-row toolbar without category buttons, an animated green ambient background with a grey dot grid, and a gallery led by large vector tool icons. The current background is a static green gradient with layered dot grids. In Merge PDF, the Page size slider enlarges thumbnails from 140 to 650 pixels and re-renders pages sharply without changing your selection or order.
+The interface uses a green gradient, a compact navigation bar and a gallery led by vector tool icons. In Merge PDF, the zoom controls resize thumbnails and re-render pages sharply without changing their selection or order.
 
 ![PDFtoolkit26 tool library](docs/screenshots/library.png)
 
@@ -28,11 +28,22 @@ PDFtoolkit26 brings common PDF jobs into one native desktop app: choose a tool, 
 
 ## Install
 
-Download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.6.8-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
+On Windows, download the installer from [GitHub Releases](https://github.com/pommfritzer/DeskPDFtoolkit/releases), or run `PDFtoolkit26-0.6.9-Setup.exe` from the local `releases` folder. The installer includes Python, Qt and the PDF engine; users do not install Python. Installation is per user and needs no administrator privileges.
 
 The optional Explorer integration adds **Open in PDFtoolkit26**, **Compress with PDFtoolkit26**, and **Extract pages with PDFtoolkit26** to PDF right-click menus. On Windows 11, use **Show more options**. Your default PDF reader is unchanged. Uninstall from Windows Settings to remove the app and its menu entries.
 
-Target: Windows 10/11, x64. The initial build is unsigned; Windows may show an unknown-publisher notice. Signing is a release-maintainer task.
+Windows builds target Windows 10/11 x64 and are unsigned. Linux x64 builds are portable archives: extract the archive and run `PDFtoolkit26/PDFtoolkit26`. macOS builds are separate Apple Silicon and Intel app archives: extract the archive and move `PDFtoolkit26.app` to Applications. The macOS preview is not notarized, so macOS may block it until explicitly allowed in Privacy & Security. Desktop context-menu integration is currently Windows-only.
+
+To run from source on Linux or macOS, install Python 3.11 or newer, then:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+pdftoolkit26
+```
+
+Tesseract and LibreOffice are optional separate installations on all platforms. The Linux and macOS builds are checked by the project’s desktop CI; support for other Unix variants is not yet verified.
 
 ## Tools
 
@@ -82,7 +93,7 @@ Python 3.11+ is supported; the release workflow uses 3.13. `requirements-lock.tx
 .\.venv\Scripts\python run.py --tool extract "C:\Documents\example.pdf"
 ```
 
-## Build an installer
+## Build the desktop apps
 
 Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then:
 
@@ -92,7 +103,9 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then:
 
 To upgrade the local installation and open Merge PDF, run `./scripts/install.ps1` from the project folder. It uses the project version's installer, retains installer task preferences, closes the previous app through the installer, and launches once afterward. Installation stays in `%LOCALAPPDATA%\Programs\PDFtoolkit26`; reinstalling updates the same Windows uninstall entry. Disabling Explorer integration or the desktop shortcut during setup removes those entries.
 
-The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.6.8-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`. The Windows GitHub Actions workflow builds and uploads the installer on pushes and pull requests. Pushing a version tag such as `v0.6.8` also publishes the installer and SHA-256 checksum to a preview release. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog, installer definition and release workflow before tagging a new version.
+The script regenerates the icon, runs tests, collects dependency licenses, bundles a standalone application with PyInstaller, checks bundled startup, and compiles `releases/PDFtoolkit26-0.6.9-Setup.exe`. Dependency discovery uses an isolated PATH to avoid picking up incompatible DLLs from unrelated installed software. The portable app is in `dist/PDFtoolkit26`.
+
+On Linux or macOS, install the development dependencies in a virtual environment and run `bash scripts/build-unix.sh`. The script produces a portable archive in `releases/`. Builds must run on their target operating system and architecture. The GitHub Actions workflow builds Windows, Linux x64, and macOS Apple Silicon and Intel previews and publishes them with SHA-256 checksums for version tags. Update the version in `pyproject.toml`, `deskpdf/__init__.py`, the About dialog and installer definition before tagging a new version.
 
 ## Architecture
 

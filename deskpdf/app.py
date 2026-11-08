@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pymupdf as pdf
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl, QSize, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, Signal, QUrl, QSize, QTimer
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QMenu, QSplitter, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -687,7 +687,8 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_output)))
 
     def about(self):
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.8\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures.\n\nWindows 11: Explorer commands appear under Show more options.")
+        details = "\n\nWindows 11: Explorer commands appear under Show more options." if sys.platform == "win32" else ""
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.9\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures." + details)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):
@@ -710,6 +711,30 @@ class Window(QMainWindow):
             event.accept()
 
 
+class FileOpenHandler(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pending = []
+        self.handler = None
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.FileOpen:
+            path = event.file() or event.url().toLocalFile()
+            if path:
+                self.pending.append(path)
+                self.deliver()
+            return True
+        return False
+
+    def set_handler(self, handler):
+        self.handler = handler
+        self.deliver()
+
+    def deliver(self):
+        while self.handler and self.pending:
+            self.handler(self.pending.pop(0))
+
+
 def main():
     parser = argparse.ArgumentParser(description="PDFtoolkit26 local PDF workbench")
     parser.add_argument("--tool", choices=list(TOOL_BY_ID), default=None)
@@ -717,6 +742,8 @@ def main():
     parser.add_argument("files", nargs="*")
     arguments = parser.parse_args()
     app = QApplication(sys.argv[:1])
+    file_open = FileOpenHandler(app)
+    app.installEventFilter(file_open)
     app.setApplicationName("PDFtoolkit26")
     app.setOrganizationName("PDFtoolkit26")
     app.setStyle("Fusion")
@@ -741,6 +768,7 @@ def main():
         window.raise_()
         window.activateWindow()
     broker.requested.connect(receive)
+    file_open.set_handler(lambda path: receive({"files": [path]}))
     if arguments.tool or arguments.files:
         window.select_tool(TOOL_BY_ID[arguments.tool or "merge"])
         window.add_paths(arguments.files)

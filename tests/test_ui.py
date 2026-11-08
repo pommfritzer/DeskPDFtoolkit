@@ -131,3 +131,16 @@ def test_form_tool_offers_visual_editor(application_session, monkeypatch):
     action.click()
     assert calls == [True]
     window.close()
+
+def test_file_open_events_are_queued_and_delivered(application_session):
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtGui import QFileOpenEvent
+    from deskpdf.app import FileOpenHandler
+    handler = FileOpenHandler()
+    application_session.installEventFilter(handler)
+    QCoreApplication.sendEvent(application_session, QFileOpenEvent("/tmp/first file.pdf"))
+    received = []
+    handler.set_handler(received.append)
+    QCoreApplication.sendEvent(application_session, QFileOpenEvent("/tmp/second.pdf"))
+    application_session.removeEventFilter(handler)
+    assert received == ["/tmp/first file.pdf", "/tmp/second.pdf"]

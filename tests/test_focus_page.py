@@ -1126,3 +1126,247 @@ def test_radio_option_with_escaped_pdf_name(tmp_path, application_session):
     focus.close()
     reopened.close()
     workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_edit_existing_content_on_rotated_cropped_page(tmp_path, application_session, rotation):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+    from PIL import Image, ImageDraw
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QFileDialog
+    source_image = tmp_path / "original.png"
+    replacement = tmp_path / "replacement.png"
+    Image.new("RGB", (80, 40), "red").save(source_image)
+    picture = Image.new("RGB", (80, 40), "green")
+    ImageDraw.Draw(picture).rectangle((40, 0, 79, 39), fill="blue")
+    picture.save(replacement)
+    source = tmp_path / "source.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        page.insert_text((60, 90), "Original words", fontsize=18)
+        page.insert_text((60, 145), "Keep this line", fontsize=14)
+        page.insert_image(pdf.Rect(70, 200, 230, 280), filename=str(source_image))
+        page.set_cropbox(pdf.Rect(20, 20, 380, 480))
+        page.set_rotation(rotation)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    items = [item for item in focus.scene.items() if isinstance(item, ObjectItem)]
+    text_item = next(item for item in items if item.obj.kind == "Text" and item.obj.text == "Original words")
+    text_item.setSelected(True)
+    focus.text.setPlainText("Edited")
+    image_item = next(item for item in items if item.obj.kind == "Image")
+    focus.scene.clearSelection()
+    image_item.setSelected(True)
+    with patch.object(QFileDialog, "getOpenFileName", return_value=(str(replacement), "")):
+        focus.change_image()
+    visible_rect = pdf.Rect(image_item.obj.rect)
+    assert text_item.obj.rotation == rotation
+    assert image_item.obj.rotation == rotation
+    from PySide6.QtGui import QImage, QPainter
+    scene_rect = focus.scene.sceneRect()
+    preview = QImage(round(scene_rect.width()), round(scene_rect.height()), QImage.Format.Format_RGB32)
+    preview.fill(Qt.GlobalColor.white)
+    focus.scene.clearSelection()
+    painter = QPainter(preview)
+    focus.scene.render(painter)
+    painter.end()
+    page = focus.document[0]
+    original_space = visible_rect * page.derotation_matrix
+    for fraction, expected in ((.25, "green"), (.75, "blue")):
+        point = pdf.Point(original_space.x0 + original_space.width * fraction, (original_space.y0 + original_space.y1) / 2) * page.rotation_matrix
+        color = preview.pixelColor(round(point.x), round(point.y))
+        if expected == "green":
+            assert color.green() > color.red() and color.green() > color.blue()
+        else:
+            assert color.blue() > color.red() and color.blue() > color.green()
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        assert page.rotation == rotation
+        text = page.get_text()
+        assert "Original words" not in text
+        assert "Edited" in text and "Keep this line" in text
+        original_space = visible_rect * page.derotation_matrix
+        pix = page.get_pixmap(alpha=False)
+        for fraction, expected in ((.25, "green"), (.75, "blue")):
+            point = pdf.Point(original_space.x0 + original_space.width * fraction, (original_space.y0 + original_space.y1) / 2) * page.rotation_matrix
+            red, green, blue = pix.pixel(round(point.x), round(point.y))
+            if expected == "green":
+                assert green > red and green > blue
+            else:
+                assert blue > red and blue > green
+    with pdf.open(source) as doc:
+        assert "Original words" in doc[0].get_text()
+    workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_crop_preserves_edited_content_position_on_rotated_page(tmp_path, application_session, rotation):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.crop_page import CropPageDialog
+    from deskpdf.engine import run_tool
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QDialog
+    source = tmp_path / "source.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        page.insert_text((100, 140), "Original words", fontsize=18)
+        page.set_rotation(rotation)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    item.setSelected(True)
+    focus.text.setPlainText("Edited")
+    page = focus.document[0]
+    before = (pdf.Rect(item.obj.rect) * page.derotation_matrix) + (page.cropbox.x0, page.cropbox.y0, page.cropbox.x0, page.cropbox.y0)
+    with patch.object(CropPageDialog, "exec", return_value=QDialog.DialogCode.Accepted), patch.object(CropPageDialog, "cropbox", return_value=(20, 30, 370, 460)):
+        focus.crop()
+    page = focus.document[0]
+    edited = next(obj for obj in focus.objects[0] if obj.kind == "Text")
+    after = (pdf.Rect(edited.rect) * page.derotation_matrix) + (page.cropbox.x0, page.cropbox.y0, page.cropbox.x0, page.cropbox.y0)
+    assert all(abs(a - b) < .01 for a, b in zip(before, after))
+    assert len([item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text"]) == 1
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        assert "Edited" in doc[0].get_text()
+        assert "Original words" not in doc[0].get_text()
+    workspace.close()
+
+@pytest.mark.parametrize("rotation", [90, 180, 270])
+def test_move_and_resize_existing_text_on_rotated_page(tmp_path, application_session, rotation):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+    from PySide6.QtCore import QPointF
+    from PySide6.QtTest import QTest
+    source = tmp_path / "source.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        page.insert_text((100, 140), "Move existing text", fontsize=18)
+        page.set_rotation(rotation)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.show()
+    application_session.processEvents()
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    initial = pdf.Rect(item.obj.rect)
+    viewport = focus.view.viewport()
+    start = focus.view.mapFromScene(item.mapToScene(item.rect().center()))
+    end = focus.view.mapFromScene(item.mapToScene(item.rect().center()) + QPointF(30, 30))
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(viewport, end, delay=20)
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=end)
+    moved = pdf.Rect(item.obj.rect)
+    assert moved.x0 > initial.x0 + 20 and moved.y0 > initial.y0 + 20
+    handle = item.mapToScene(item.rect().bottomRight() - QPointF(3, 3))
+    start = focus.view.mapFromScene(handle)
+    end = focus.view.mapFromScene(handle + QPointF(30, 30))
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(viewport, end, delay=20)
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=end)
+    resized = pdf.Rect(item.obj.rect)
+    assert resized.width > moved.width + 15 and resized.height > moved.height + 15
+    focus.undo()
+    assert pdf.Rect(focus.objects[0][0].rect) == moved
+    focus.redo()
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        assert page.get_text().count("Move existing text") == 1
+        box = page.search_for("Move existing text")[0] * page.rotation_matrix
+        assert box.intersects(resized)
+        assert not box.intersects(initial)
+    workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_added_picture_stays_upright_on_rotated_page(tmp_path, application_session, rotation):
+    from deskpdf.engine import run_tool
+    from PIL import Image, ImageDraw
+    picture = Image.new("RGB", (80, 40), "green")
+    ImageDraw.Draw(picture).rectangle((40, 0, 79, 39), fill="blue")
+    image = tmp_path / "picture.png"
+    picture.save(image)
+    source = tmp_path / "source.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        page.set_rotation(rotation)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.add("Image", str(image))
+    item = focus.selected()
+    item.setPos(80, 100)
+    item.setRect(0, 0, 160, 80)
+    focus.capture()
+    rect = pdf.Rect(item.obj.rect)
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        pix = doc[0].get_pixmap(alpha=False)
+        left = pix.pixel(round(rect.x0 + rect.width * .25), round((rect.y0 + rect.y1) / 2))
+        right = pix.pixel(round(rect.x0 + rect.width * .75), round((rect.y0 + rect.y1) / 2))
+        assert left[1] > left[0] and left[1] > left[2]
+        assert right[2] > right[0] and right[2] > right[1]
+    workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_crop_keeps_existing_picture_edit_and_identity(tmp_path, application_session, rotation):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.crop_page import CropPageDialog
+    from deskpdf.engine import run_tool
+    from PIL import Image
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QFileDialog, QDialog
+    first = tmp_path / "first.png"
+    replacement = tmp_path / "replacement.png"
+    Image.new("RGB", (80, 40), "red").save(first)
+    Image.new("RGB", (80, 40), "blue").save(replacement)
+    source = tmp_path / "source.pdf"
+    with pdf.open() as doc:
+        page = doc.new_page(width=400, height=500)
+        page.insert_image(pdf.Rect(100, 150, 260, 230), filename=str(first))
+        page.set_rotation(rotation)
+        doc.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Image")
+    item.setSelected(True)
+    with patch.object(QFileDialog, "getOpenFileName", return_value=(str(replacement), "")):
+        focus.change_image()
+    with patch.object(CropPageDialog, "exec", return_value=QDialog.DialogCode.Accepted), patch.object(CropPageDialog, "cropbox", return_value=(20, 30, 370, 460)):
+        focus.crop()
+    items = [item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Image"]
+    assert len(items) == 1 and items[0].obj.modified
+    box = pdf.Rect(items[0].obj.rect)
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as doc:
+        page = doc[0]
+        blocks = [block for block in page.get_text("dict")["blocks"] if block["type"] == 1]
+        assert len(blocks) == 1
+        placed = pdf.Rect(blocks[0]["bbox"]) * page.rotation_matrix
+        assert all(abs(a - b) < .1 for a, b in zip(placed, box))
+        pix = page.get_pixmap(alpha=False)
+        red, green, blue = pix.pixel(round((box.x0 + box.x1) / 2), round((box.y0 + box.y1) / 2))
+        assert blue > red and blue > green
+        assert not any(red > 240 and green < 15 and blue < 15 for red, green, blue in zip(pix.samples[0::3], pix.samples[1::3], pix.samples[2::3]))
+    workspace.close()
