@@ -5,15 +5,15 @@ from html import escape
 from pathlib import Path
 
 import pymupdf as pdf
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap, QKeySequence, QShortcut
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QImage, QPainter, QPen, QPixmap, QKeySequence, QShortcut
 from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QDialog, QFileDialog, QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton, QRadioButton, QDoubleSpinBox, QVBoxLayout, QWidget, QMessageBox
 
 from deskpdf.engine import open_document
 from deskpdf.crop_page import CropPageDialog
 
 
-from deskpdf.objects import Object, apply_related_forms, apply_objects, decode_pdf_name, export_objects, remove_originals, selected_form_values
+from deskpdf.objects import Object, apply_related_forms, apply_objects, decode_pdf_name, embedded_text_font, export_objects, remove_originals, selected_form_values
 
 
 class FormFieldItem(QGraphicsRectItem):
@@ -83,13 +83,19 @@ class ObjectItem(QGraphicsRectItem):
         elif self.obj.kind == "Ellipse":
             painter.drawEllipse(r)
         else:
-            font = QFont({"Sans": "Arial", "Serif": "Georgia", "Mono": "Courier New"}[self.obj.family])
+            baseline = (self.obj.baseline_ratio or 1.075) * self.obj.size
+            use_embedded = embedded_text_font(self.obj, r.width(), baseline, r.height())
+            family = self.editor.embedded_font_family(self.obj.source_font) if use_embedded else ""
+            font = QFont(family or {"Sans": "Arial", "Serif": "Georgia", "Mono": "Courier New"}[self.obj.family])
             font.setPixelSize(max(1, round(self.obj.size)))
             font.setBold(self.obj.bold)
             font.setItalic(self.obj.italic)
             painter.setFont(font)
             painter.setClipRect(r)
-            painter.drawText(r, Qt.TextFlag.TextWordWrap, self.obj.text)
+            if family:
+                painter.drawText(QPointF(0, baseline), self.obj.text)
+            else:
+                painter.drawText(r, Qt.TextFlag.TextWordWrap, self.obj.text)
         painter.restore()
         if self.isSelected():
             r = self.rect()
@@ -138,6 +144,7 @@ class VisualEditor(QDialog):
         self.future = []
         self.dirty = False
         self.loading = False
+        self.preview_fonts = {}
         layout = QVBoxLayout(self)
         bar = QHBoxLayout()
         for title, action in (("←", lambda: self.navigate(-1)), ("→", lambda: self.navigate(1)), ("Text", lambda: self.add("Text")), ("Picture", self.add_image), ("Rectangle", lambda: self.add("Rectangle")), ("Ellipse", lambda: self.add("Ellipse")), ("Crop", self.crop), ("Undo", self.undo), ("Redo", self.redo), ("Delete", self.delete), ("Save a copy…", self.save)):
@@ -231,6 +238,19 @@ class VisualEditor(QDialog):
         QShortcut(QKeySequence("Ctrl+Z"), self, activated=self.undo)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self, activated=self.redo)
         self.render()
+
+    def embedded_font_family(self, data):
+        if data not in self.preview_fonts:
+            identifier = QFontDatabase.addApplicationFontFromData(data)
+            families = QFontDatabase.applicationFontFamilies(identifier) if identifier >= 0 else []
+            self.preview_fonts[data] = (identifier, families[0] if families else "")
+        return self.preview_fonts[data][1]
+
+    def release_preview_fonts(self):
+        for identifier, _ in self.preview_fonts.values():
+            if identifier >= 0:
+                QFontDatabase.removeApplicationFont(identifier)
+        self.preview_fonts.clear()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -659,6 +679,7 @@ class VisualEditor(QDialog):
             event.ignore()
             return
         self.dirty = False
+        self.release_preview_fonts()
         if not self.document.is_closed:
             self.document.close()
         event.accept()
@@ -667,6 +688,7 @@ class VisualEditor(QDialog):
         if self.dirty and QMessageBox.question(self, "Unsaved edits", "Discard unsaved edits?", QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Discard:
             return
         self.dirty = False
+        self.release_preview_fonts()
         if not self.document.is_closed:
             self.document.close()
         super().reject()

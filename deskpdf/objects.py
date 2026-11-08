@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from html import escape
+from functools import lru_cache
 from hashlib import sha256
 import pymupdf as pdf
 
@@ -173,6 +174,26 @@ def apply_related_forms(document, entries):
         apply_form_values(document, index, [obj])
 
 
+@lru_cache(maxsize=8)
+def load_embedded_font(data):
+    return pdf.Font(fontbuffer=data)
+
+
+def embedded_text_font(obj, width, baseline, bottom):
+    if not (obj.source_font and obj.source_style == (obj.family, obj.bold, obj.italic)
+            and obj.baseline_ratio is not None and baseline <= bottom
+            and all(char.isprintable() for char in obj.text)):
+        return None
+    try:
+        font = load_embedded_font(obj.source_font)
+        if (all(font.has_glyph(ord(char)) for char in obj.text)
+                and font.text_length(obj.text, fontsize=obj.size) <= width):
+            return font
+    except (RuntimeError, ValueError):
+        pass
+    return None
+
+
 def apply_objects(document, objects):
     apply_related_forms(document, [(index, obj) for index, entries in objects.items() for obj in entries if obj.kind == "Form"])
     for index, entries in objects.items():
@@ -195,18 +216,13 @@ def apply_objects(document, objects):
                     }
                     font = fonts[obj.family][int(obj.bold) + 2 * int(obj.italic)]
                     baseline = box.y0 + (obj.baseline_ratio or 1.075) * obj.size
-                    if (obj.source_font and obj.source_style == (obj.family, obj.bold, obj.italic)
-                            and obj.baseline_ratio is not None and baseline <= box.y1
-                            and all(char.isprintable() for char in obj.text)):
+                    if embedded_text_font(obj, box.width, baseline, box.y1):
                         try:
-                            original_font = pdf.Font(fontbuffer=obj.source_font)
-                            if (all(original_font.has_glyph(ord(char)) for char in obj.text)
-                                    and original_font.text_length(obj.text, fontsize=obj.size) <= box.width):
-                                resource = "DP" + sha256(obj.source_font).hexdigest()[:16]
-                                page.insert_font(fontname=resource, fontbuffer=obj.source_font)
-                                page.insert_text((box.x0, baseline), obj.text, fontname=resource,
-                                                 fontsize=obj.size, color=color, fill_opacity=obj.opacity)
-                                continue
+                            resource = "DP" + sha256(obj.source_font).hexdigest()[:16]
+                            page.insert_font(fontname=resource, fontbuffer=obj.source_font)
+                            page.insert_text((box.x0, baseline), obj.text, fontname=resource,
+                                             fontsize=obj.size, color=color, fill_opacity=obj.opacity)
+                            continue
                         except (RuntimeError, ValueError):
                             pass
                     single_line = (obj.source_rect and obj.baseline_ratio is not None and obj.text.isascii()

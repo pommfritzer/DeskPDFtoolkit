@@ -1431,3 +1431,46 @@ def test_existing_embedded_font_respects_style_change(tmp_path, application_sess
         assert [span["text"] for span in spans] == ["Bold"]
         assert spans[0]["flags"] & 16
     workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_embedded_font_preview_tracks_saved_text(tmp_path, application_session, rotation):
+    from PySide6.QtGui import QImage, QPainter
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+
+    source = tmp_path / "font-preview.pdf"
+    with pdf.open() as document:
+        page = document.new_page(width=250, height=300)
+        page.insert_font(fontname="OriginalFont", fontbuffer=pdf.Font("cjk").buffer)
+        page.insert_text((40, 90), "Original words", fontname="OriginalFont", fontsize=18)
+        page.set_rotation(rotation)
+        document.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    assert focus.embedded_font_family(item.obj.source_font)
+    item.setSelected(True)
+    focus.text.setPlainText("Changed")
+    focus.scene.clearSelection()
+    bounds = focus.scene.sceneRect()
+    preview = QImage(round(bounds.width()), round(bounds.height()), QImage.Format.Format_RGB32)
+    preview.fill(Qt.GlobalColor.white)
+    painter = QPainter(preview)
+    focus.scene.render(painter)
+    painter.end()
+    focus.close()
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_edits": [workspace.edits[(str(source), 0)]]})
+    with pdf.open(output) as document:
+        rendered = document[0].get_pixmap(alpha=False)
+        def dark_bounds(pixel):
+            points = [(x, y) for y in range(rendered.height) for x in range(rendered.width)
+                      if max(pixel(x, y)) < 180]
+            assert points
+            return (min(p[0] for p in points), min(p[1] for p in points),
+                    max(p[0] for p in points), max(p[1] for p in points))
+        on_screen = dark_bounds(lambda x, y: preview.pixelColor(x, y).getRgb()[:3])
+        on_pdf = dark_bounds(rendered.pixel)
+        assert all(abs(a - b) <= 4 for a, b in zip(on_screen, on_pdf)), (on_screen, on_pdf)
+    workspace.close()
