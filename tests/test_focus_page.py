@@ -1370,3 +1370,64 @@ def test_crop_keeps_existing_picture_edit_and_identity(tmp_path, application_ses
         assert blue > red and blue > green
         assert not any(red > 240 and green < 15 and blue < 15 for red, green, blue in zip(pix.samples[0::3], pix.samples[1::3], pix.samples[2::3]))
     workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_existing_text_reuses_embedded_font(tmp_path, application_session, rotation):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+
+    source = tmp_path / "font.pdf"
+    font = pdf.Font("helv")
+    with pdf.open() as document:
+        page = document.new_page(width=400, height=500)
+        page.insert_font(fontname="OriginalFont", fontbuffer=font.buffer)
+        page.insert_text((50, 90), "Original long text", fontname="OriginalFont", fontsize=18)
+        page.set_rotation(rotation)
+        document.save(source)
+
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    assert item.obj.source_font
+    item.setSelected(True)
+    focus.text.setPlainText("Grüße")
+    focus.close()
+    key = (str(source), 0)
+    output = tmp_path / "edited.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as document:
+        spans = [span for block in document[0].get_text("dict")["blocks"] if block["type"] == 0
+                 for line in block["lines"] for span in line["spans"]]
+        assert [span["text"] for span in spans] == ["Grüße"]
+        assert spans[0]["font"] == "NimbusSans-Regular"
+        assert abs(spans[0]["size"] - 18) < .1
+    workspace.close()
+
+
+def test_existing_embedded_font_respects_style_change(tmp_path, application_session):
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+
+    source = tmp_path / "font.pdf"
+    with pdf.open() as document:
+        page = document.new_page()
+        page.insert_font(fontname="OriginalFont", fontbuffer=pdf.Font("helv").buffer)
+        page.insert_text((50, 90), "Original long text", fontname="OriginalFont", fontsize=18)
+        document.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    item.setSelected(True)
+    focus.text.setPlainText("Bold")
+    focus.bold.setChecked(True)
+    focus.close()
+    output = tmp_path / "edited.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_edits": [workspace.edits[(str(source), 0)]]})
+    with pdf.open(output) as document:
+        spans = [span for block in document[0].get_text("dict")["blocks"] if block["type"] == 0
+                 for line in block["lines"] for span in line["spans"]]
+        assert [span["text"] for span in spans] == ["Bold"]
+        assert spans[0]["flags"] & 16
+    workspace.close()

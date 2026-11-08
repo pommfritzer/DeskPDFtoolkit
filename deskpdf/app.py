@@ -688,7 +688,7 @@ class Window(QMainWindow):
 
     def about(self):
         details = "\n\nWindows 11: Explorer commands appear under Show more options." if sys.platform == "win32" else ""
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.9\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures." + details)
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.10\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures." + details)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

@@ -347,6 +347,15 @@ class VisualEditor(QDialog):
         if any(annot.type[0] == pdf.PDF_ANNOT_REDACT for annot in page.annots() or []):
             return []
         objects = []
+        embedded_fonts = {}
+        for xref, _, _, name, *_ in page.get_fonts(full=True):
+            try:
+                font_data = page.parent.extract_font(xref)[3]
+                if font_data:
+                    key = "".join(char.lower() for char in name.split("+")[-1] if char.isalnum())
+                    embedded_fonts.setdefault(key, []).append(font_data)
+            except (RuntimeError, ValueError):
+                continue
         blocks = page.get_text("dict")["blocks"]
         form_rects = [widget.rect for widget in page.widgets() or []]
         original_boxes = {"Text": [], "Image": []}
@@ -373,9 +382,12 @@ class VisualEditor(QDialog):
                         color = f"#{span['color']:06x}"
                         origin = span["origin"]
                         identity = f"{origin[0] + page.cropbox.x0:.1f}:{origin[1] + page.cropbox.y0:.1f}:{span['text']}"
+                        bold, italic = bool(flags & 16) or "bold" in font, bool(flags & 2)
+                        key = "".join(char.lower() for char in span["font"].split("+")[-1] if char.isalnum())
+                        fonts = embedded_fonts.get(key, [])
                         objects.append(Object("Text", tuple(box), text=span["text"], family=family,
-                                              size=span["size"], bold=bool(flags & 16) or "bold" in font,
-                                              italic=bool(flags & 2), color=color, source_rect=tuple(box),
+                                              size=span["size"], bold=bold, italic=italic, color=color, source_rect=tuple(box),
+                                              source_font=fonts[0] if len(fonts) == 1 else b"", source_style=(family, bold, italic),
                                               baseline_ratio=(origin[1] - span["bbox"][1]) / span["size"],
                                               opacity=span.get("alpha", 255) / 255, rotation=page.rotation,
                                               source_id=f"t:{identity}", modified=False))

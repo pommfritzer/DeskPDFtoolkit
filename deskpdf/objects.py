@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from html import escape
+from hashlib import sha256
 import pymupdf as pdf
 
 @dataclass
@@ -17,6 +18,8 @@ class Object:
     source_rect: tuple | None = None
     source_id: str = ""
     baseline_ratio: float | None = None
+    source_font: bytes = b""
+    source_style: tuple = ()
     opacity: float = 1.0
     rotation: int = 0
     form_xref: int = 0
@@ -192,6 +195,20 @@ def apply_objects(document, objects):
                     }
                     font = fonts[obj.family][int(obj.bold) + 2 * int(obj.italic)]
                     baseline = box.y0 + (obj.baseline_ratio or 1.075) * obj.size
+                    if (obj.source_font and obj.source_style == (obj.family, obj.bold, obj.italic)
+                            and obj.baseline_ratio is not None and baseline <= box.y1
+                            and all(char.isprintable() for char in obj.text)):
+                        try:
+                            original_font = pdf.Font(fontbuffer=obj.source_font)
+                            if (all(original_font.has_glyph(ord(char)) for char in obj.text)
+                                    and original_font.text_length(obj.text, fontsize=obj.size) <= box.width):
+                                resource = "DP" + sha256(obj.source_font).hexdigest()[:16]
+                                page.insert_font(fontname=resource, fontbuffer=obj.source_font)
+                                page.insert_text((box.x0, baseline), obj.text, fontname=resource,
+                                                 fontsize=obj.size, color=color, fill_opacity=obj.opacity)
+                                continue
+                        except (RuntimeError, ValueError):
+                            pass
                     single_line = (obj.source_rect and obj.baseline_ratio is not None and obj.text.isascii()
                                    and all(32 <= ord(char) < 127 for char in obj.text)
                                    and baseline <= box.y1
