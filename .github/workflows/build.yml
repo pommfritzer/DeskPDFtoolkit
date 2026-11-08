@@ -39,7 +39,7 @@ jobs:
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-xinput0 libxcb-render-util0 xvfb xauth desktop-file-utils fonts-dejavu-core tesseract-ocr
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libglib2.0-bin libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-xinput0 libxcb-render-util0 xvfb xauth desktop-file-utils fonts-dejavu-core tesseract-ocr
       - if: runner.os == 'macOS'
         run: command -v tesseract || brew install tesseract
       - run: python -m pip install ".[dev]"

@@ -68,3 +68,24 @@ def test_installer_rejects_shortcut_symlink(distribution, tmp_path):
     result = subprocess.run(["sh", str(distribution / "install.sh")], env=env, capture_output=True, text=True)
     assert result.returncode != 0
     assert important.read_text(encoding="utf-8") == "keep"
+
+def test_desktop_entry_launches_pdf_paths(distribution, tmp_path):
+    import time
+    gio = shutil.which("gio")
+    if not gio:
+        pytest.skip("gio is not installed")
+    executable = distribution / "PDFtoolkit26"
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$PDFTOOLKIT26_TEST_ARGUMENTS"\n', encoding="utf-8")
+    executable.chmod(0o755)
+    data = tmp_path / 'user space % $ " ` \\' / "data"
+    arguments = tmp_path / "received.txt"
+    document = tmp_path / "a file \u00dc.pdf"
+    document.write_bytes(b"test")
+    env = {**os.environ, "HOME": str(tmp_path), "XDG_DATA_HOME": str(data), "PDFTOOLKIT26_TEST_ARGUMENTS": str(arguments)}
+    subprocess.run(["sh", str(distribution / "install.sh")], env=env, check=True, capture_output=True, text=True)
+    desktop = data / "applications" / "org.pdftoolkit26.desktop"
+    subprocess.run([gio, "launch", str(desktop), str(document)], env=env, check=True, capture_output=True, text=True)
+    deadline = time.monotonic() + 5
+    while not arguments.exists() and time.monotonic() < deadline:
+        time.sleep(.05)
+    assert arguments.read_text(encoding="utf-8").splitlines() == [str(document)]
