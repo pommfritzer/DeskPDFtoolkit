@@ -198,12 +198,23 @@ def apply_objects(document, objects):
     apply_related_forms(document, [(index, obj) for index, entries in objects.items() for obj in entries if obj.kind == "Form"])
     for index, entries in objects.items():
         page = document[index]
+        redactions = [obj for obj in entries if obj.kind == "Redaction" and not obj.removed]
+        if redactions:
+            annotations = list(page.annots() or [])
+            if any(annot.type[0] == pdf.PDF_ANNOT_REDACT for annot in annotations):
+                raise ValueError("This page already has redaction annotations. Apply or remove them before adding a redaction area.")
+            areas = [pdf.Rect(obj.rect) * page.derotation_matrix for obj in redactions]
+            widgets = list(page.widgets() or [])
+            if any(area.intersects(widget.rect) for area in areas for widget in widgets):
+                raise ValueError("A redaction area overlaps a form field. Flatten or remove the field first.")
+            if any(area.intersects(annot.rect) for area in areas for annot in annotations):
+                raise ValueError("A redaction area overlaps an annotation. Flatten or remove the annotation first.")
         remove_originals(page, entries)
         rotation, derotation = page.rotation, page.derotation_matrix
         page.set_rotation(0)
         try:
             for obj in entries:
-                if obj.kind == "Form" or obj.removed or (obj.source_rect and not obj.modified):
+                if obj.kind in ("Form", "Redaction") or obj.removed or (obj.source_rect and not obj.modified):
                     continue
                 visible = pdf.Rect(obj.rect)
                 box = visible * derotation
@@ -245,6 +256,12 @@ def apply_objects(document, objects):
                     page.draw_rect(box, color=color, width=2)
                 elif obj.kind == "Ellipse":
                     page.draw_oval(box, color=color, width=2)
+            for obj in redactions:
+                page.add_redact_annot(pdf.Rect(obj.rect) * derotation, fill=(0, 0, 0), cross_out=False)
+            if redactions:
+                page.apply_redactions(images=pdf.PDF_REDACT_IMAGE_PIXELS,
+                                      graphics=pdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+                                      text=pdf.PDF_REDACT_TEXT_REMOVE)
         finally:
             page.set_rotation(rotation)
 

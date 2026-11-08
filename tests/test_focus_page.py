@@ -1474,3 +1474,74 @@ def test_embedded_font_preview_tracks_saved_text(tmp_path, application_session, 
         on_pdf = dark_bounds(rendered.pixel)
         assert all(abs(a - b) <= 4 for a, b in zip(on_screen, on_pdf)), (on_screen, on_pdf)
     workspace.close()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_focus_redacts_text_and_picture_on_rotated_page(tmp_path, application_session, rotation):
+    from PySide6.QtCore import QRectF
+    from PIL import Image
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+
+    picture = tmp_path / "secret.png"
+    Image.new("RGB", (100, 50), "red").save(picture)
+    source = tmp_path / "source.pdf"
+    with pdf.open() as document:
+        page = document.new_page(width=300, height=300)
+        page.insert_text((40, 90), "SECRET", fontsize=18)
+        page.insert_image(pdf.Rect(40, 110, 140, 160), filename=str(picture))
+        page.insert_text((40, 230), "KEEP", fontsize=18)
+        page.set_rotation(rotation)
+        document.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    focus.add("Redaction")
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Redaction")
+    area = pdf.Rect(30, 65, 160, 170) * focus.document[0].rotation_matrix
+    item.setPos(area.x0, area.y0)
+    item.setRect(QRectF(0, 0, area.width, area.height))
+    focus.capture()
+    focus.close()
+    output = tmp_path / "redacted.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_edits": [workspace.edits[(str(source), 0)]]})
+    with pdf.open(output) as document:
+        page = document[0]
+        assert "SECRET" not in page.get_text()
+        assert "KEEP" in page.get_text()
+        pixmap = page.get_pixmap(alpha=False)
+        point = pdf.Point(90, 135) * page.rotation_matrix
+        assert max(pixmap.pixel(round(point.x), round(point.y))) < 20
+        for image in page.get_images():
+            extracted = document.extract_image(image[0])["image"]
+            from io import BytesIO
+            with Image.open(BytesIO(extracted)).convert("RGB") as pixels:
+                assert all(not (red > 200 and green < 30 and blue < 30) for red, green, blue in pixels.getdata())
+    workspace.close()
+
+
+def test_redaction_area_does_not_apply_existing_annotations(tmp_path):
+    from deskpdf.objects import Object, apply_objects
+    with pdf.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 90), "KEEP EXISTING", fontsize=18)
+        annotation = page.add_redact_annot(pdf.Rect(35, 65, 200, 95))
+        original_xref = annotation.xref
+        with pytest.raises(ValueError, match="already has redaction annotations"):
+            apply_objects(document, {0: [Object("Redaction", (250, 100, 300, 150))]})
+        assert "KEEP EXISTING" in document[0].get_text()
+        assert document[0].load_annot(original_xref) is not None
+
+
+def test_redaction_area_refuses_overlapping_form_field():
+    from deskpdf.objects import Object, apply_objects
+    with pdf.open() as document:
+        page = document.new_page()
+        widget = pdf.Widget()
+        widget.field_name = "private"
+        widget.field_type = pdf.PDF_WIDGET_TYPE_TEXT
+        widget.field_value = "sensitive"
+        widget.rect = pdf.Rect(40, 40, 160, 80)
+        page.add_widget(widget)
+        with pytest.raises(ValueError, match="overlaps a form field"):
+            apply_objects(document, {0: [Object("Redaction", (30, 30, 170, 90))]})
+        assert next(document[0].widgets()).field_value == "sensitive"

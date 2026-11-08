@@ -51,7 +51,7 @@ class ObjectItem(QGraphicsRectItem):
         self.editor = editor
         self.setPos(obj.rect[0], obj.rect[1])
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
-        self.setZValue(1 if obj.source_rect and obj.kind == "Image" else 2 if obj.source_rect else 3)
+        self.setZValue(4 if obj.kind == "Redaction" else 1 if obj.source_rect and obj.kind == "Image" else 2 if obj.source_rect else 3)
         self.setAcceptHoverEvents(True)
         self.resizing = False
         self.image = QPixmap() if obj.kind == "Image" else None
@@ -78,6 +78,8 @@ class ObjectItem(QGraphicsRectItem):
             pass
         elif self.obj.kind == "Image":
             painter.drawPixmap(r, self.image, QRectF(self.image.rect()))
+        elif self.obj.kind == "Redaction":
+            painter.fillRect(r, QColor("black"))
         elif self.obj.kind == "Rectangle":
             painter.drawRect(r)
         elif self.obj.kind == "Ellipse":
@@ -147,9 +149,11 @@ class VisualEditor(QDialog):
         self.preview_fonts = {}
         layout = QVBoxLayout(self)
         bar = QHBoxLayout()
-        for title, action in (("←", lambda: self.navigate(-1)), ("→", lambda: self.navigate(1)), ("Text", lambda: self.add("Text")), ("Picture", self.add_image), ("Rectangle", lambda: self.add("Rectangle")), ("Ellipse", lambda: self.add("Ellipse")), ("Crop", self.crop), ("Undo", self.undo), ("Redo", self.redo), ("Delete", self.delete), ("Save a copy…", self.save)):
+        for title, action in (("←", lambda: self.navigate(-1)), ("→", lambda: self.navigate(1)), ("Text", lambda: self.add("Text")), ("Picture", self.add_image), ("Rectangle", lambda: self.add("Rectangle")), ("Ellipse", lambda: self.add("Ellipse")), ("Redact area", lambda: self.add("Redaction")), ("Crop", self.crop), ("Undo", self.undo), ("Redo", self.redo), ("Delete", self.delete), ("Save a copy…", self.save)):
             button = QPushButton(title)
             button.clicked.connect(action)
+            if title == "Redact area":
+                button.setToolTip("Drag and resize the black area. Saving removes covered page content. Flatten overlapping form fields or annotations first; review metadata separately.")
             bar.addWidget(button)
         layout.addLayout(bar)
         self.page_label = QLabel()
@@ -496,8 +500,8 @@ class VisualEditor(QDialog):
         self.text.setEnabled(is_text)
         for control in (self.family, self.size, self.bold, self.italic):
             control.setEnabled(is_text)
-        self.color.setEnabled(bool(item and item.obj.kind != "Image"))
-        self.custom_color.setEnabled(bool(item and item.obj.kind != "Image"))
+        self.color.setEnabled(bool(item and item.obj.kind not in ("Image", "Redaction")))
+        self.custom_color.setEnabled(bool(item and item.obj.kind not in ("Image", "Redaction")))
         self.replace_image.setVisible(bool(item and item.obj.kind == "Image"))
         if item:
             obj = item.obj
