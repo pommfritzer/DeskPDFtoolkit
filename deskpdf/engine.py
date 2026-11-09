@@ -443,7 +443,12 @@ def _process(tool, paths, target, options):
                     if tool == "redact":
                         page.apply_redactions()
                 elif tool == "number":
-                    page.insert_text((rect.width / 2, rect.height - 22), str(index + 1), fontsize=10, color=(.35, .38, .42))
+                    label = str(index + 1)
+                    width = pdf.get_text_length(label, fontsize=10)
+                    if width > rect.width or rect.height < 32:
+                        raise ToolError("The page is too small for a page number.")
+                    point = pdf.Point((rect.width - width) / 2, rect.height - 22) * page.derotation_matrix
+                    page.insert_text(point, label, fontsize=10, color=(.35, .38, .42), rotate=page.rotation)
                 elif tool == "sign":
                     signature = Path(options.get("signature", ""))
                     if not signature.is_file():
@@ -456,7 +461,13 @@ def _process(tool, paths, target, options):
                     box = pdf.Rect(x, y, x + width, y + height)
                     if not rect.contains(box):
                         raise ToolError("The signature extends beyond this page. Move it or reduce its width.")
-                    page.insert_image(box * page.derotation_matrix, filename=str(signature))
+                    rotation = page.rotation
+                    unrotated = box * page.derotation_matrix
+                    page.set_rotation(0)
+                    try:
+                        page.insert_image(unrotated, filename=str(signature), rotate=rotation, keep_proportion=False)
+                    finally:
+                        page.set_rotation(rotation)
                 else:
                     text_value = options.get("text", "").strip()
                     if not text_value:

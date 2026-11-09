@@ -459,3 +459,62 @@ def test_clean_removes_named_page_and_associated_attachments(tmp_path):
             if document.xref_is_stream(xref):
                 stream = document.xref_stream(xref)
                 assert named_data not in stream and page_data not in stream and another_data not in stream
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_page_numbers_are_centered_and_upright_on_rotated_cropped_pages(tmp_path, rotation):
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "numbered.pdf"
+    with pdf.open() as document:
+        for _ in range(10):
+            page = document.new_page(width=300, height=400)
+            page.set_cropbox(pdf.Rect(20, 30, 280, 370))
+            page.set_rotation(rotation)
+        document.save(source)
+    run_tool("number", [source], output, {"pages": "1,10"})
+    with pdf.open(output) as document:
+        for index, label in ((0, "1"), (9, "10")):
+            page = document[index]
+            box = page.search_for(label)[0] * page.rotation_matrix
+            assert abs((box.x0 + box.x1) / 2 - page.rect.width / 2) < .1
+            assert abs(box.y1 - (page.rect.height - 19.01)) < .1
+            line = page.get_text("dict")["blocks"][0]["lines"][0]
+            direction = pdf.Point(*line["dir"]) * pdf.Matrix(rotation)
+            assert abs(direction.x - 1) < .01 and abs(direction.y) < .01
+        assert not document[1].get_text().strip()
+
+
+def test_numbering_tiny_page_does_not_replace_output(tmp_path):
+    source = tmp_path / "tiny.pdf"
+    output = tmp_path / "output.pdf"
+    with pdf.open() as document:
+        document.new_page(width=30, height=25)
+        document.save(source)
+    output.write_bytes(b"keep")
+    with pytest.raises(ToolError, match="too small"):
+        run_tool("number", [source], output, {})
+    assert output.read_bytes() == b"keep"
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_signature_image_is_upright_and_positioned_on_rotated_cropped_page(tmp_path, rotation):
+    from PIL import ImageDraw
+
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "signed.pdf"
+    signature = tmp_path / "signature.png"
+    image = Image.new("RGB", (80, 40), "red")
+    ImageDraw.Draw(image).rectangle((40, 0, 79, 39), fill="blue")
+    image.save(signature)
+    with pdf.open() as document:
+        page = document.new_page(width=300, height=400)
+        page.set_cropbox(pdf.Rect(20, 30, 280, 370))
+        page.set_rotation(rotation)
+        document.save(source)
+    run_tool("sign", [source], output, {"signature": str(signature), "x": "40", "y": "80", "width": "100"})
+    with pdf.open(output) as document:
+        page = document[0]
+        assert page.rotation == rotation
+        pixmap = page.get_pixmap(alpha=False)
+        assert pixmap.pixel(65, 105) == (255, 0, 0)
+        assert pixmap.pixel(115, 105) == (0, 0, 255)
+        assert pixmap.pixel(35, 75) == (255, 255, 255)
+        assert pixmap.pixel(145, 135) == (255, 255, 255)
