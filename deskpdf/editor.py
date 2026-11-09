@@ -13,7 +13,7 @@ from deskpdf.engine import open_document
 from deskpdf.crop_page import CropPageDialog
 
 
-from deskpdf.objects import Object, apply_related_forms, apply_objects, decode_pdf_name, embedded_text_font, export_objects, remove_originals, selected_form_values
+from deskpdf.objects import Object, apply_related_forms, apply_objects, decode_pdf_name, embedded_text_font, export_objects, rebase_objects_for_crop, remove_originals, selected_form_values
 
 
 class FormFieldItem(QGraphicsRectItem):
@@ -661,11 +661,7 @@ class VisualEditor(QDialog):
         old_derotation = page.derotation_matrix
         box = pdf.Rect(dialog.cropbox())
         page.set_cropbox(box)
-        delta = (old.x0 - box.x0, old.y0 - box.y0, old.x0 - box.x0, old.y0 - box.y0)
-        for obj in self.objects.get(self.page, []):
-            obj.rect = tuple((pdf.Rect(obj.rect) * old_derotation + delta) * page.rotation_matrix)
-            if obj.source_rect:
-                obj.source_rect = tuple((pdf.Rect(obj.source_rect) * old_derotation + delta) * page.rotation_matrix)
+        rebase_objects_for_crop(self.objects.get(self.page, []), old, old_derotation, page)
         self.render()
 
     def save(self):

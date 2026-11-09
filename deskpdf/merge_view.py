@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QStyleOptionViewItem, 
 from deskpdf.engine import open_document
 from deskpdf.add_page import AddPageDialog
 from deskpdf.crop_page import CropPageDialog
+from deskpdf.objects import rebase_objects_for_crop
 
 
 class PageActions(QStyledItemDelegate):
@@ -234,7 +235,11 @@ class MergeView(QWidget):
             dialog = CropPageDialog(page, self)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
-            self.crops[key] = dialog.cropbox()
+            old_crop, old_derotation = page.cropbox, page.derotation_matrix
+            box = pdf.Rect(dialog.cropbox())
+            page.set_cropbox(box)
+            rebase_objects_for_crop(self.edits.get(key, []), old_crop, old_derotation, page)
+            self.crops[key] = tuple(box)
         self.edits_dirty = True
         self.render_thumbnails()
 

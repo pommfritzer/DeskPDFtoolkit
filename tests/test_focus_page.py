@@ -1584,3 +1584,49 @@ def test_merge_duplicate_page_keeps_redaction_per_copy(tmp_path, second_redacted
         assert len(document) == 2
         assert "SECRET WORD" not in document[0].get_text()
         assert ("SECRET WORD" not in document[1].get_text()) == second_redacted
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_thumbnail_crop_keeps_existing_edits_anchored(tmp_path, application_session, rotation):
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QDialog
+    from deskpdf.crop_page import CropPageDialog
+    from deskpdf.editor import ObjectItem
+    from deskpdf.engine import run_tool
+
+    source = tmp_path / "source.pdf"
+    with pdf.open() as document:
+        page = document.new_page(width=400, height=500)
+        page.insert_text((100, 140), "Original words", fontsize=18)
+        page.set_rotation(rotation)
+        document.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    item = next(item for item in focus.scene.items() if isinstance(item, ObjectItem) and item.obj.kind == "Text")
+    item.setSelected(True)
+    focus.text.setPlainText("Edited")
+    focus.add("Rectangle")
+    focus.close()
+    key = (str(source), 0)
+    with pdf.open(source) as document:
+        page = document[0]
+        before = [(pdf.Rect(obj.rect) * page.derotation_matrix) + (page.cropbox.x0, page.cropbox.y0, page.cropbox.x0, page.cropbox.y0)
+                  for obj in workspace.edits[key]]
+        source_before = next(pdf.Rect(obj.source_rect) * page.derotation_matrix for obj in workspace.edits[key] if obj.source_rect)
+    with patch.object(CropPageDialog, "exec", return_value=QDialog.DialogCode.Accepted), patch.object(CropPageDialog, "cropbox", return_value=(20, 30, 370, 460)):
+        workspace.crop_page(0)
+    with pdf.open(source) as document:
+        page = document[0]
+        page.set_cropbox(pdf.Rect(workspace.crops[key]))
+        delta = (page.cropbox.x0, page.cropbox.y0, page.cropbox.x0, page.cropbox.y0)
+        after = [(pdf.Rect(obj.rect) * page.derotation_matrix) + delta for obj in workspace.edits[key]]
+        source_after = next((pdf.Rect(obj.source_rect) * page.derotation_matrix) + delta for obj in workspace.edits[key] if obj.source_rect)
+        assert all(abs(a - b) < .01 for old, new in zip(before, after) for a, b in zip(old, new))
+        assert all(abs(a - b) < .01 for a, b in zip(source_before, source_after))
+    output = tmp_path / "output.pdf"
+    run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_crops": [workspace.crops[key]], "merge_edits": [workspace.edits[key]]})
+    with pdf.open(output) as document:
+        assert "Edited" in document[0].get_text()
+        assert "Original words" not in document[0].get_text()
+        assert document[0].get_drawings()
+    workspace.close()

@@ -43,6 +43,16 @@ class Object:
     removed: bool = False
 
 
+def rebase_objects_for_crop(entries, old_crop, old_derotation, page):
+    crop = page.cropbox
+    delta = (old_crop.x0 - crop.x0, old_crop.y0 - crop.y0,
+             old_crop.x0 - crop.x0, old_crop.y0 - crop.y0)
+    for obj in entries:
+        obj.rect = tuple((pdf.Rect(obj.rect) * old_derotation + delta) * page.rotation_matrix)
+        if obj.source_rect:
+            obj.source_rect = tuple((pdf.Rect(obj.source_rect) * old_derotation + delta) * page.rotation_matrix)
+
+
 def decode_pdf_name(value):
     data = bytearray()
     index = 0
