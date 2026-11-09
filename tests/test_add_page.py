@@ -54,3 +54,8 @@ def test_add_page_dialog_exports_to_merge(tmp_path):
         assert "A new chapter" in saved[0].get_text()
     window.close()
     app.processEvents()
+
+
+def test_title_page_rejects_unsupported_characters():
+    with pytest.raises(ValueError, match="cannot be saved reliably"):
+        create_title_page("Hello \U0001f600")

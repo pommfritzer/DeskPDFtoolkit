@@ -448,6 +448,11 @@ def _process(tool, paths, target, options):
                     point = pdf.Point(rect.width / 4, rect.height / 2) if tool == "watermark" else pdf.Point(numeric(options, "x", 48, 0, rect.width), numeric(options, "y", 72, size, rect.height))
                     if not text_value.isprintable():
                         raise ToolError("Enter a single line of printable text.")
+                    from deskpdf.objects import validate_text_characters
+                    try:
+                        validate_text_characters(text_value)
+                    except ValueError as error:
+                        raise ToolError(str(error)) from None
                     use_unicode = any(ord(char) > 255 for char in text_value)
                     font = unicode_overlay_font() if use_unicode else None
                     if font and any(not font.has_glyph(ord(char)) or unicodedata.bidirectional(char) in {"R", "AL", "AN"}

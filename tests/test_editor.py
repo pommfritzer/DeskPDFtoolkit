@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 import pymupdf as pdf
 from PIL import Image
@@ -68,3 +69,19 @@ def test_escape_respects_unsaved_changes(tmp_path, application_session):
         editor.reject()
     assert editor.document.is_closed
     assert not editor.dirty
+
+
+def test_unsupported_text_does_not_replace_existing_output(tmp_path):
+    from deskpdf.engine import run_tool
+    from deskpdf.objects import Object
+
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "output.pdf"
+    with pdf.open() as document:
+        document.new_page()
+        document.save(source)
+    output.write_bytes(b"existing file")
+    obj = Object("Text", (40, 40, 200, 100), text="Hello \U0001f600")
+    with pytest.raises(ValueError, match="cannot be saved reliably"):
+        run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_edits": [[obj]]})
+    assert output.read_bytes() == b"existing file"

@@ -4,6 +4,11 @@ from functools import lru_cache
 from hashlib import sha256
 import pymupdf as pdf
 
+def validate_text_characters(text):
+    if any(ord(char) > 0xFFFF or 0xD800 <= ord(char) <= 0xDFFF for char in text):
+        raise ValueError("This text contains characters that cannot be saved reliably, such as emoji. Use an image for those characters.")
+
+
 @dataclass
 class Object:
     kind: str
@@ -220,6 +225,7 @@ def apply_objects(document, objects):
                 box = visible * derotation
                 color = tuple(int(obj.color[i:i + 2], 16) / 255 for i in (1, 3, 5))
                 if obj.kind == "Text":
+                    validate_text_characters(obj.text)
                     fonts = {
                         "Sans": ("helv", "hebo", "heit", "hebi"),
                         "Serif": ("tiro", "tibo", "tiit", "tibi"),

@@ -1,12 +1,14 @@
 import pymupdf as pdf
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
+from deskpdf.objects import validate_text_characters
 from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPlainTextEdit, QSpinBox, QToolButton, QVBoxLayout
 
 
 def create_title_page(text, family="Sans", size=32, bold=False, italic=False):
     if len(text) > 1000 or len(text.splitlines()) > 20:
         raise ValueError("Keep your page title within 1,000 characters and 20 lines.")
+    validate_text_characters(text)
     document = pdf.open()
     page = document.new_page(width=595, height=842)
     if text.strip():

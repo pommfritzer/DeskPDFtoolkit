@@ -393,6 +393,6 @@ def test_overlay_rejects_unsupported_characters_without_corruption(tmp_path, tex
         document.new_page()
         document.save(source)
     output = tmp_path / "output.pdf"
-    with pytest.raises(ToolError, match="visual editor"):
+    with pytest.raises(ToolError, match="visual editor|cannot be saved reliably"):
         run_tool("text_overlay", [source], output, {"text": text})
     assert not output.exists()
