@@ -439,9 +439,9 @@ def _process(tool, paths, target, options):
                         raise ToolError("Enter some text first.")
                     size = numeric(options, "size", 24 if tool == "watermark" else 12, 6, 144)
                     point = pdf.Point(rect.width / 4, rect.height / 2) if tool == "watermark" else pdf.Point(numeric(options, "x", 48, 0, rect.width), numeric(options, "y", 72, size, rect.height))
-                    point = point * page.derotation_matrix
-                    if tool == "text_overlay" and point.x + pdf.get_text_length(text_value, fontsize=size) > page.cropbox.width:
+                    if tool == "text_overlay" and point.x + pdf.get_text_length(text_value, fontsize=size) > rect.width:
                         raise ToolError("The text extends beyond this page. Reduce its size or move it left.")
+                    point = point * page.derotation_matrix
                     page.insert_text(point, text_value, fontsize=size, color=(.15, .19, .25), fill_opacity=.18 if tool == "watermark" else 1, rotate=page.rotation)
             if tool in {"redact", "highlight"} and not matches:
                 raise ToolError("No matching text found. Scanned documents may need text recognition first.")

@@ -350,3 +350,23 @@ def test_optional_tool_locations_cover_supported_platforms(monkeypatch):
     assert "/Applications/LibreOffice.app/Contents/MacOS/soffice" in executable_candidates("soffice", "darwin")
     assert "/usr/bin/tesseract" in executable_candidates("tesseract", "linux")
     assert "/usr/bin/soffice" in executable_candidates("soffice", "linux")
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_text_overlay_fits_and_rejects_overflow_in_visible_coordinates(tmp_path, rotation):
+    source = tmp_path / "rotated.pdf"
+    with pdf.open() as document:
+        page = document.new_page(width=300, height=400)
+        page.set_cropbox(pdf.Rect(20, 30, 280, 370))
+        page.set_rotation(rotation)
+        document.save(source)
+    output = tmp_path / "output.pdf"
+    run_tool("text_overlay", [source], output, {"text": "Hello", "size": "20", "x": "40", "y": "80"})
+    with pdf.open(output) as document:
+        page = document[0]
+        box = page.search_for("Hello")[0] * page.rotation_matrix
+        assert abs(box.x0 - 40) < .1
+        assert abs(box.y0 - 58.5) < .2
+        width = page.rect.width
+    with pytest.raises(ToolError, match="extends beyond"):
+        run_tool("text_overlay", [source], tmp_path / "overflow.pdf", {"text": "Hello", "size": "20", "x": str(width - 10), "y": "80"})
+    assert not (tmp_path / "overflow.pdf").exists()
