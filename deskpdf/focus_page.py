@@ -107,6 +107,7 @@ class PageFocus(VisualEditor):
     def finish(self):
         self.store()
         self.workspace.render_thumbnails()
+        self.release_preview_fonts()
         if not self.document.is_closed:
             self.document.close()
 

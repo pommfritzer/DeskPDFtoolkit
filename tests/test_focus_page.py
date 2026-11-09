@@ -1545,3 +1545,42 @@ def test_redaction_area_refuses_overlapping_form_field():
         with pytest.raises(ValueError, match="overlaps a form field"):
             apply_objects(document, {0: [Object("Redaction", (30, 30, 170, 90))]})
         assert next(document[0].widgets()).field_value == "sensitive"
+
+
+def test_closing_focus_releases_preview_fonts(tmp_path, application_session):
+    from unittest.mock import patch
+    from PySide6.QtGui import QFontDatabase
+
+    source = tmp_path / "font.pdf"
+    with pdf.open() as document:
+        document.new_page()
+        document.save(source)
+    workspace = MergeView()
+    workspace.refresh([source], "")
+    focus = PageFocus(workspace, 0)
+    assert focus.embedded_font_family(pdf.Font("cjk").buffer)
+    identifier = next(iter(focus.preview_fonts.values()))[0]
+    with patch.object(QFontDatabase, "removeApplicationFont", wraps=QFontDatabase.removeApplicationFont) as remove:
+        focus.close()
+        remove.assert_called_once_with(identifier)
+    assert not focus.preview_fonts
+    workspace.close()
+
+@pytest.mark.parametrize("second_redacted", [False, True])
+def test_merge_duplicate_page_keeps_redaction_per_copy(tmp_path, second_redacted):
+    from deskpdf.engine import run_tool
+    from deskpdf.objects import Object
+
+    source = tmp_path / "source.pdf"
+    with pdf.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 90), "SECRET WORD", fontsize=18)
+        document.save(source)
+    redaction = Object("Redaction", (35, 65, 200, 100))
+    output = tmp_path / "merged.pdf"
+    run_tool("merge", [source, source], output,
+             {"merge_pages": ["1", "1"], "merge_edits": [[redaction], [redaction] if second_redacted else []]})
+    with pdf.open(output) as document:
+        assert len(document) == 2
+        assert "SECRET WORD" not in document[0].get_text()
+        assert ("SECRET WORD" not in document[1].get_text()) == second_redacted
