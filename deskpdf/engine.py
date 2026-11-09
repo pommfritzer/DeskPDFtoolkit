@@ -159,6 +159,21 @@ def select_pages(document, pages):
         document.xref_set_key(catalog, "AcroForm/Fields", fields)
 
 
+def remove_attachments(document):
+    for name in document.embfile_names():
+        document.embfile_del(name)
+    document.xref_set_key(document.pdf_catalog(), "AF", "null")
+    for page in document:
+        document.xref_set_key(page.xref, "AF", "null")
+        for annotation in list(page.annots() or []):
+            if annotation.type[0] == pdf.PDF_ANNOT_FILE_ATTACHMENT:
+                page.delete_annot(annotation)
+            else:
+                document.xref_set_key(annotation.xref, "AF", "null")
+        for widget in page.widgets() or []:
+            document.xref_set_key(widget.xref, "AF", "null")
+
+
 def run_tool(tool: str, paths: list[Path], destination: Path, options: dict) -> Path:
     if not paths:
         raise ToolError("Choose at least one file first.")
@@ -381,8 +396,7 @@ def _process(tool, paths, target, options):
         elif tool == "clean":
             document.set_metadata({})
             document.del_xml_metadata()
-            for name in document.embfile_names():
-                document.embfile_del(name)
+            remove_attachments(document)
         elif tool == "forms":
             values = {}
             for line in options.get("form_values", "").splitlines():

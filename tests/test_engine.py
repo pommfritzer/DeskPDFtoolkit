@@ -410,3 +410,52 @@ def test_owner_password_allows_editing_when_reader_password_is_empty(tmp_path):
         open_document(source)
     with open_document(source, "owner-password") as document:
         assert len(document) == 1
+
+
+def test_clean_removes_named_page_and_associated_attachments(tmp_path):
+    source = tmp_path / "attachments.pdf"
+    output = tmp_path / "clean.pdf"
+    named_data = b"named-attachment-secret-19384938"
+    page_data = b"page-attachment-secret-59382938"
+    another_data = b"another-attachment-secret-33949102"
+    with pdf.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 60), "Keep this page")
+        document.set_metadata({"author": "Private author"})
+        document.set_xml_metadata("<x:xmpmeta xmlns:x='adobe:ns:meta/'><secret>Private XML</secret></x:xmpmeta>")
+        document.embfile_add("named.txt", named_data, filename="named.txt")
+        annot = page.add_file_annot((70, 70), page_data, "page.txt")
+        page.add_file_annot((80, 80), another_data, "another.txt")
+        filespec_type, filespec = document.xref_get_key(annot.xref, "FS")
+        assert filespec_type in ("xref", "dict")
+        document.xref_set_key(document.pdf_catalog(), "AF", f"[{filespec}]")
+        document.xref_set_key(page.xref, "AF", f"[{filespec}]")
+        note = page.add_text_annot((100, 100), "Keep annotation")
+        document.xref_set_key(note.xref, "AF", f"[{filespec}]")
+        widget = pdf.Widget()
+        widget.field_name = "contact"
+        widget.field_type = pdf.PDF_WIDGET_TYPE_TEXT
+        widget.field_value = "Keep field"
+        widget.rect = pdf.Rect(40, 130, 180, 160)
+        field = page.add_widget(widget)
+        document.xref_set_key(field.xref, "AF", f"[{filespec}]")
+        document.save(source)
+    run_tool("clean", [source], output, {})
+    with pdf.open(output) as document:
+        page = document[0]
+        assert "Keep this page" in page.get_text()
+        assert not document.metadata.get("author")
+        assert not document.get_xml_metadata()
+        assert not document.embfile_names()
+        annotations = list(page.annots() or [])
+        assert len(annotations) == 1 and annotations[0].info["content"] == "Keep annotation"
+        assert document.xref_get_key(document.pdf_catalog(), "AF")[0] == "null"
+        assert document.xref_get_key(page.xref, "AF")[0] == "null"
+        assert document.xref_get_key(annotations[0].xref, "AF")[0] == "null"
+        field = next(page.widgets())
+        assert field.field_value == "Keep field"
+        assert document.xref_get_key(field.xref, "AF")[0] == "null"
+        for xref in range(1, document.xref_length()):
+            if document.xref_is_stream(xref):
+                stream = document.xref_stream(xref)
+                assert named_data not in stream and page_data not in stream and another_data not in stream

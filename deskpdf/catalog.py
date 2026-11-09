@@ -22,7 +22,7 @@ TOOLS = [
     Tool("rotate", "Rotate pages", "Turn selected pages by 90, 180 or 270 degrees.", "Organize", "↻", ("pages", "rotation")),
     Tool("compress", "Compress PDF", "Optimize structure and remove duplicate objects, losslessly.", "Optimize", "↙"),
     Tool("flatten", "Flatten PDF", "Make annotations and completed form fields permanent.", "Optimize", "▱"),
-    Tool("clean", "Remove metadata", "Clear document properties, XML metadata and attachments.", "Optimize", "◇"),
+    Tool("clean", "Remove metadata", "Clear document properties, XML metadata and common file attachments.", "Optimize", "◇"),
     Tool("images_to_pdf", "Images to PDF", "One page per image. Supports PNG, JPEG, TIFF and more.", "Convert", "▧", multiple=True),
     Tool("pdf_to_png", "PDF to images", "Export selected pages as crisp PNG images in a ZIP.", "Convert", "▦", ("pages", "dpi"), "zip"),
     Tool("text", "PDF to text", "Extract readable text in page order.", "Convert", "≡", ("pages",), "txt"),
