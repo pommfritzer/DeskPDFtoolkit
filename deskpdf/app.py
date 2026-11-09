@@ -25,7 +25,7 @@ FIELDS = {
     "pages": ("Pages", "all", "Examples: 1, 3-5 or 5-1. Page order is preserved."),
     "rotation": ("Turn clockwise", "90", "Degrees"),
     "dpi": ("Resolution", "144", "72–300 DPI. Higher values use more memory."),
-    "text": ("Text", "", "Standard PDF fonts support Latin text. Use a signature image for other scripts."),
+    "text": ("Text", "", "Supports Latin, Greek, Cyrillic and many East Asian characters. For other scripts, try the visual editor."),
     "size": ("Text size", "18", "PDF points"),
     "x": ("Left position", "48", "PDF points from the visible page’s left edge."),
     "y": ("Top position", "72", "PDF points from the visible page’s top edge; text uses its baseline."),
@@ -688,7 +688,7 @@ class Window(QMainWindow):
 
     def about(self):
         details = "\n\nWindows 11: Explorer commands appear under Show more options." if sys.platform == "win32" else ""
-        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.12\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures." + details)
+        QMessageBox.about(self, "About PDFtoolkit26", "PDFtoolkit26 0.6.13\n\nA local-first, open-source PDF workbench.\nAGPL-3.0-or-later · Built with Qt and MuPDF.\n\nNo telemetry, accounts or document uploads.\nOCR needs Tesseract; Office input needs LibreOffice.\nVisual signatures are not certificate signatures." + details)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and not (self.worker and self.worker.isRunning()):

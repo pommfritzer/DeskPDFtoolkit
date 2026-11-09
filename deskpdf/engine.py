@@ -4,8 +4,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import zipfile
 from contextlib import ExitStack
+from functools import lru_cache
 from pathlib import Path
 
 import pymupdf as pdf
@@ -14,6 +16,11 @@ from PIL import Image, ImageDraw, ImageOps, ImageSequence
 
 class ToolError(ValueError):
     pass
+
+
+@lru_cache(maxsize=1)
+def unicode_overlay_font():
+    return pdf.Font("cjk")
 
 
 def parse_pages(expression: str, count: int) -> list[int]:
@@ -439,10 +446,25 @@ def _process(tool, paths, target, options):
                         raise ToolError("Enter some text first.")
                     size = numeric(options, "size", 24 if tool == "watermark" else 12, 6, 144)
                     point = pdf.Point(rect.width / 4, rect.height / 2) if tool == "watermark" else pdf.Point(numeric(options, "x", 48, 0, rect.width), numeric(options, "y", 72, size, rect.height))
-                    if tool == "text_overlay" and point.x + pdf.get_text_length(text_value, fontsize=size) > rect.width:
+                    if not text_value.isprintable():
+                        raise ToolError("Enter a single line of printable text.")
+                    use_unicode = any(ord(char) > 255 for char in text_value)
+                    font = unicode_overlay_font() if use_unicode else None
+                    if font and any(not font.has_glyph(ord(char)) or unicodedata.bidirectional(char) in {"R", "AL", "AN"}
+                                    or unicodedata.category(char).startswith("M") for char in text_value):
+                        raise ToolError("Some characters cannot be used in this tool. Try a text box in the visual editor.")
+                    width = font.text_length(text_value, fontsize=size) if font else pdf.get_text_length(text_value, fontsize=size)
+                    if tool == "text_overlay" and point.x + width > rect.width:
                         raise ToolError("The text extends beyond this page. Reduce its size or move it left.")
+                    fontname = "helv"
+                    if font:
+                        names = {entry[4] for entry in page.get_fonts()}
+                        fontname = "DPUnicode"
+                        while fontname in names:
+                            fontname += "X"
+                        page.insert_font(fontname=fontname, fontbuffer=font.buffer)
                     point = point * page.derotation_matrix
-                    page.insert_text(point, text_value, fontsize=size, color=(.15, .19, .25), fill_opacity=.18 if tool == "watermark" else 1, rotate=page.rotation)
+                    page.insert_text(point, text_value, fontname=fontname, fontsize=size, color=(.15, .19, .25), fill_opacity=.18 if tool == "watermark" else 1, rotate=page.rotation)
             if tool in {"redact", "highlight"} and not matches:
                 raise ToolError("No matching text found. Scanned documents may need text recognition first.")
         elif tool not in {"compress", "protect", "unlock"}:

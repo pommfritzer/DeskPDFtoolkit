@@ -370,3 +370,29 @@ def test_text_overlay_fits_and_rejects_overflow_in_visible_coordinates(tmp_path,
     with pytest.raises(ToolError, match="extends beyond"):
         run_tool("text_overlay", [source], tmp_path / "overflow.pdf", {"text": "Hello", "size": "20", "x": str(width - 10), "y": "80"})
     assert not (tmp_path / "overflow.pdf").exists()
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+@pytest.mark.parametrize("tool", ["text_overlay", "watermark"])
+def test_unicode_text_is_preserved_in_overlay(tmp_path, rotation, tool):
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "output.pdf"
+    with pdf.open() as document:
+        page = document.new_page(width=400, height=500)
+        page.set_rotation(rotation)
+        document.save(source)
+    text = "\u20ac \u039a\u03b1\u03bb\u03b7\u03bc\u03ad\u03c1\u03b1 \u4e2d\u6587"
+    run_tool(tool, [source], output, {"text": text, "size": "16", "x": "40", "y": "80"})
+    with pdf.open(output) as document:
+        assert text in document[0].get_text()
+
+
+@pytest.mark.parametrize("text", ["\U0001f600", "\u0645\u0631\u062d\u0628\u0627", "A\u0301"])
+def test_overlay_rejects_unsupported_characters_without_corruption(tmp_path, text):
+    source = tmp_path / "source.pdf"
+    with pdf.open() as document:
+        document.new_page()
+        document.save(source)
+    output = tmp_path / "output.pdf"
+    with pytest.raises(ToolError, match="visual editor"):
+        run_tool("text_overlay", [source], output, {"text": text})
+    assert not output.exists()
