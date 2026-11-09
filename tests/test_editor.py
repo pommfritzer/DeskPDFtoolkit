@@ -98,10 +98,12 @@ def test_editor_preserves_distinct_passwords_and_permissions_through_undo(tmp_pa
         document.new_page()
         document.save(source, encryption=pdf.PDF_ENCRYPT_AES_256,
                       owner_pw="owner-password", user_pw="user-password", permissions=permissions)
-    with pdf.open(source) as document:
-        assert document.authenticate("user-password")
-        expected_permissions = document.permissions
-        expected_encryption = document.metadata["encryption"]
+    expected_permissions = {}
+    for password in ("user-password", "owner-password"):
+        with pdf.open(source) as document:
+            assert document.authenticate(password)
+            expected_permissions[password] = document.permissions
+            expected_encryption = document.metadata["encryption"]
     editor = VisualEditor(source, "user-password")
     editor.add("Text")
     editor.undo()
@@ -113,7 +115,7 @@ def test_editor_preserves_distinct_passwords_and_permissions_through_undo(tmp_pa
         with pdf.open(output) as document:
             assert document.needs_pass
             assert document.authenticate(password) == expected_role
-            assert document.permissions == expected_permissions
+            assert document.permissions == expected_permissions[password]
             assert document.metadata["encryption"] == expected_encryption
             assert "Text" in document[0].get_text()
     editor.close()
