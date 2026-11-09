@@ -46,12 +46,15 @@ def parse_pages(expression: str, count: int) -> list[int]:
 
 def open_document(path: Path, password: str = ""):
     document = pdf.open(path)
-    if document.needs_pass and not document.authenticate(password):
+    # Rechecking needs_pass after authentication can reset MuPDF's encryption state.
+    needs_password = document.needs_pass
+    authenticated = document.authenticate(password) if needs_password or (password and document.is_pdf) else 0
+    if needs_password and not authenticated:
         document.close()
         raise ToolError(f"Enter the correct opening password for {path.name}.")
-    if document.is_pdf and not document.permissions & pdf.PDF_PERM_MODIFY:
+    if document.is_pdf and not document.permissions & pdf.PDF_PERM_MODIFY and not authenticated & 4:
         document.close()
-        raise ToolError("This document restricts editing. Open an authorized, unrestricted copy.")
+        raise ToolError("This document restricts editing. Open it with the owner password.")
     return document
 
 

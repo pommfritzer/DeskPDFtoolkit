@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdftoolkit26"
-version = "0.6.13"
+version = "0.6.14"
 description = "A quiet, local-first PDF workbench for Windows, Linux and macOS"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"

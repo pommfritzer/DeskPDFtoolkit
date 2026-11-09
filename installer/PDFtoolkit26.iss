@@ -1,4 +1,4 @@
-#define AppVersion "0.6.13"
+#define AppVersion "0.6.14"
 [Setup]
 AppId={{E67CB156-753F-48F5-943A-71157495281C}
 AppName=PDFtoolkit26

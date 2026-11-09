@@ -139,7 +139,7 @@ class VisualEditor(QDialog):
         self.resize(1200, 850)
         self.path = Path(path)
         self.document = open_document(self.path, password)
-        self.output_password = password if self.document.needs_pass else None
+        self.password = password
         self.objects = {}
         self.page = 0
         self.history = []
@@ -273,9 +273,19 @@ class VisualEditor(QDialog):
         entries.extend(obj for obj in self.objects.get(self.page, []) if obj.removed)
         self.objects[self.page] = entries
 
+    def document_data(self):
+        return self.document.tobytes(encryption=pdf.PDF_ENCRYPT_KEEP)
+
+    def open_document_data(self, data):
+        document = pdf.open(stream=data)
+        if document.needs_pass and not document.authenticate(self.password):
+            document.close()
+            raise ValueError("Could not open the encrypted document copy.")
+        return document
+
     def snapshot(self):
         self.capture()
-        return self.document.tobytes(), copy.deepcopy(self.objects), self.page
+        return self.document_data(), copy.deepcopy(self.objects), self.page
 
     def remember(self, snapshot=None):
         self.history.append(snapshot if snapshot is not None else self.snapshot())
@@ -286,10 +296,10 @@ class VisualEditor(QDialog):
     def restore(self, source, target):
         if not source: return
         self.capture()
-        target.append((self.document.tobytes(), copy.deepcopy(self.objects), self.page))
+        target.append((self.document_data(), copy.deepcopy(self.objects), self.page))
         data, self.objects, self.page = source.pop()
         self.document.close()
-        self.document = pdf.open(stream=data)
+        self.document = self.open_document_data(data)
         self.dirty = True
         self.render()
 
@@ -331,7 +341,7 @@ class VisualEditor(QDialog):
         self.show_properties()
 
     def refresh_background(self):
-        with pdf.open(stream=self.document.tobytes()) as preview:
+        with self.open_document_data(self.document_data()) as preview:
             related = [(index, obj) for index, entries in self.objects.items() for obj in entries if obj.kind == "Form"]
             apply_related_forms(preview, related)
             page = preview[self.page]
@@ -670,8 +680,8 @@ class VisualEditor(QDialog):
             destination = Path(output)
             with TemporaryDirectory(dir=destination.parent) as folder:
                 staged = Path(folder) / "edited.pdf"
-                with pdf.open(stream=self.document.tobytes()) as working:
-                    export_objects(working, self.objects, staged, self.output_password)
+                with self.open_document_data(self.document_data()) as working:
+                    export_objects(working, self.objects, staged)
                 staged.replace(destination)
             self.dirty = False
             self.page_label.setText(f"Saved {destination.name}")

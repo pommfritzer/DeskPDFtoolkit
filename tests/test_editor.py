@@ -85,3 +85,64 @@ def test_unsupported_text_does_not_replace_existing_output(tmp_path):
     with pytest.raises(ValueError, match="cannot be saved reliably"):
         run_tool("merge", [source], output, {"merge_pages": ["1"], "merge_edits": [[obj]]})
     assert output.read_bytes() == b"existing file"
+
+
+def test_editor_preserves_distinct_passwords_and_permissions_through_undo(tmp_path, application_session):
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QFileDialog
+
+    source = tmp_path / "encrypted.pdf"
+    output = tmp_path / "edited.pdf"
+    permissions = pdf.PDF_PERM_MODIFY | pdf.PDF_PERM_PRINT
+    with pdf.open() as document:
+        document.new_page()
+        document.save(source, encryption=pdf.PDF_ENCRYPT_AES_256,
+                      owner_pw="owner-password", user_pw="user-password", permissions=permissions)
+    with pdf.open(source) as document:
+        assert document.authenticate("user-password")
+        expected_permissions = document.permissions
+        expected_encryption = document.metadata["encryption"]
+    editor = VisualEditor(source, "user-password")
+    editor.add("Text")
+    editor.undo()
+    editor.redo()
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(str(output), "PDF (*.pdf)")):
+        editor.save()
+    assert output.exists()
+    for password, expected_role in (("user-password", 2), ("owner-password", 4)):
+        with pdf.open(output) as document:
+            assert document.needs_pass
+            assert document.authenticate(password) == expected_role
+            assert document.permissions == expected_permissions
+            assert document.metadata["encryption"] == expected_encryption
+            assert "Text" in document[0].get_text()
+    editor.close()
+
+
+@pytest.mark.parametrize("reader_password", ["reader-password", ""])
+def test_owner_password_allows_editing_restricted_pdf_without_changing_permissions(tmp_path, application_session, reader_password):
+    from unittest.mock import patch
+    from PySide6.QtWidgets import QFileDialog
+    from deskpdf.engine import ToolError
+
+    source = tmp_path / "restricted.pdf"
+    output = tmp_path / "edited.pdf"
+    with pdf.open() as document:
+        document.new_page()
+        document.save(source, encryption=pdf.PDF_ENCRYPT_AES_256, owner_pw="owner-password",
+                      user_pw=reader_password, permissions=pdf.PDF_PERM_PRINT)
+    with pytest.raises(ToolError, match="owner password"):
+        VisualEditor(source, reader_password)
+    editor = VisualEditor(source, "owner-password")
+    editor.add("Text")
+    editor.undo()
+    editor.redo()
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(str(output), "PDF (*.pdf)")):
+        editor.save()
+    with pdf.open(output) as document:
+        assert document.authenticate(reader_password) == 2
+        assert not document.permissions & pdf.PDF_PERM_MODIFY
+        assert "Text" in document[0].get_text()
+    with pdf.open(output) as document:
+        assert document.authenticate("owner-password") == 4
+    editor.close()

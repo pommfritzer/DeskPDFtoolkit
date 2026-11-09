@@ -396,3 +396,17 @@ def test_overlay_rejects_unsupported_characters_without_corruption(tmp_path, tex
     with pytest.raises(ToolError, match="visual editor|cannot be saved reliably"):
         run_tool("text_overlay", [source], output, {"text": text})
     assert not output.exists()
+
+
+def test_owner_password_allows_editing_when_reader_password_is_empty(tmp_path):
+    from deskpdf.engine import ToolError, open_document
+
+    source = tmp_path / "restricted.pdf"
+    with pdf.open() as document:
+        document.new_page()
+        document.save(source, encryption=pdf.PDF_ENCRYPT_AES_256, owner_pw="owner-password",
+                      user_pw="", permissions=pdf.PDF_PERM_PRINT)
+    with pytest.raises(ToolError, match="owner password"):
+        open_document(source)
+    with open_document(source, "owner-password") as document:
+        assert len(document) == 1
