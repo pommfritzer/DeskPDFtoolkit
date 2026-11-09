@@ -518,3 +518,30 @@ def test_signature_image_is_upright_and_positioned_on_rotated_cropped_page(tmp_p
         assert pixmap.pixel(115, 105) == (0, 0, 255)
         assert pixmap.pixel(35, 75) == (255, 255, 255)
         assert pixmap.pixel(145, 135) == (255, 255, 255)
+
+
+def test_text_redaction_preserves_existing_pending_marks_on_all_pages(tmp_path):
+    source = tmp_path / "pending.pdf"
+    output = tmp_path / "redacted.pdf"
+    with pdf.open() as document:
+        for index in range(2):
+            page = document.new_page(width=300, height=300)
+            if index == 0:
+                page.insert_text((40, 80), "SECRET TARGET", fontsize=14)
+            page.insert_text((40, 140), f"KEEP PENDING {index}", fontsize=14)
+            annotation = page.add_redact_annot(pdf.Rect(35, 120, 220, 150), text="Pending review", fill=(1, 0, 0))
+            annotation.set_info(title="Reviewer", content="Do not apply yet")
+            annotation.update()
+        document.save(source)
+    run_tool("redact", [source], output, {"text": "SECRET"})
+    with pdf.open(output) as document:
+        assert "SECRET" not in document[0].get_text()
+        assert "TARGET" in document[0].get_text()
+        for index, page in enumerate(document):
+            assert f"KEEP PENDING {index}" in page.get_text()
+            annotations = list(page.annots() or [])
+            assert len(annotations) == 1
+            assert annotations[0].type[0] == pdf.PDF_ANNOT_REDACT
+            assert annotations[0].info["title"] == "Reviewer"
+            assert annotations[0].info["content"] == "Do not apply yet"
+            assert tuple(annotations[0].colors["fill"]) == (1.0, 0.0, 0.0)

@@ -159,6 +159,27 @@ def select_pages(document, pages):
         document.xref_set_key(catalog, "AcroForm/Fields", fields)
 
 
+def redact_matches(page, hits):
+    if not hits:
+        return
+    document = page.parent
+    pending = [annotation.xref for annotation in page.annots(types=(pdf.PDF_ANNOT_REDACT,)) or []]
+    try:
+        # MuPDF applies every redaction annotation on the page, so temporarily hide existing marks.
+        for xref in pending:
+            document.xref_set_key(xref, "Subtype", "/Square")
+        if pending:
+            page = document.reload_page(page)
+        for hit in hits:
+            page.add_redact_annot(hit, fill=(0, 0, 0), cross_out=False)
+        page.apply_redactions()
+    finally:
+        for xref in pending:
+            document.xref_set_key(xref, "Subtype", "/Redact")
+        if pending:
+            document.reload_page(page)
+
+
 def remove_attachments(document):
     for name in document.embfile_names():
         document.embfile_del(name)
@@ -435,13 +456,11 @@ def _process(tool, paths, target, options):
                         raise ToolError("Enter the text to find.")
                     hits = page.search_for(text_value)
                     matches += len(hits)
-                    for hit in hits:
-                        if tool == "redact":
-                            page.add_redact_annot(hit, fill=(0, 0, 0))
-                        else:
-                            page.add_highlight_annot(hit)
                     if tool == "redact":
-                        page.apply_redactions()
+                        redact_matches(page, hits)
+                    else:
+                        for hit in hits:
+                            page.add_highlight_annot(hit)
                 elif tool == "number":
                     label = str(index + 1)
                     width = pdf.get_text_length(label, fontsize=10)
